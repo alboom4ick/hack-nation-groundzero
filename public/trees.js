@@ -1,6 +1,7 @@
 // Browse the action trees and customize their branches for one's own use case.
 import { readWorkMap, GUARDRAIL_KINDS } from './workmap.js';
 import * as E from './tree-edit.js';
+import { renderRouteMap, highlightStep } from './route-map.js';
 import { listVideos, uploadVideo, deleteVideo } from './video-store.js';
 import { listCustom, saveCustom, deleteCustom, backend } from './tree-store.js';
 
@@ -11,6 +12,7 @@ const KIND = { limit: 'Limit', exception: 'Exception', stop_and_ask: 'Stop and a
 let shared = [];          // [{ id, map }]
 let shownVideos;
 let cur = null;           // { id, draft, editable, saved }
+let routeSvg = null;
 const flash = (t) => { $('msg').textContent = t; };
 
 async function loadShared() {
@@ -52,6 +54,8 @@ function render() {
   $('tree-h').textContent = editable ? 'Your branches' : 'Read only. Customize a copy to change it.';
   const s = E.summarize(draft);
   $('summary').textContent = `${s.steps} step${s.steps === 1 ? '' : 's'} on, ${s.guardrails} guardrail${s.guardrails === 1 ? '' : 's'} on` + (s.stepsOff + s.guardrailsOff ? ` · ${s.stepsOff + s.guardrailsOff} switched off` : '') + (s.added ? ` · ${s.added} added by you` : '') + (editable && !cur.saved ? ' · not saved' : '');
+  routeSvg = renderRouteMap(draft.steps, { onSelect: reveal });
+  $('route').replaceChildren(routeSvg);
   $('branches').replaceChildren(...draft.steps.map((st, i) => stepView(st, i, draft.steps.length, editable)));
   if (shownVideos !== cur.id) { shownVideos = cur.id; renderVideos(); }
 }
@@ -81,6 +85,15 @@ $('video-upload').onclick = async () => {
   catch (err) { $('video-msg').textContent = err.message; $('video-upload').disabled = false; }
 };
 
+// A click on the map goes to that step's card below; hovering or focusing a card lights up its shapes on the map.
+function reveal(stepId) {
+  const li = document.getElementById(`step-${stepId}`); if (!li) return;
+  highlightStep(routeSvg, stepId);
+  li.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  li.classList.remove('pulse'); void li.offsetWidth; li.classList.add('pulse');
+  li.querySelector('input')?.focus({ preventScroll: true });
+}
+
 function stepView(st, i, n, editable) {
   const head = el('div', { className: 'head' });
   const title = el('input', { value: st.title, disabled: !editable, ariaLabel: `Step ${i + 1} title`, onchange: () => update((d) => E.renameStep(d, st.id, title.value)) });
@@ -91,7 +104,8 @@ function stepView(st, i, n, editable) {
     btn('↑', () => update((d) => E.moveStep(d, st.id, -1)), i === 0, 'Move up'),
     btn('↓', () => update((d) => E.moveStep(d, st.id, 1)), i === n - 1, 'Move down'),
     btn('Remove', () => update((d) => E.removeStep(d, st.id)), false, 'Remove step', 'danger'));
-  const li = el('li', { className: `branch${st.off ? ' off' : ''}` }, head);
+  const li = el('li', { id: `step-${st.id}`, className: `branch${st.off ? ' off' : ''}`, onmouseenter: () => highlightStep(routeSvg, st.id), onmouseleave: () => highlightStep(routeSvg, null) }, head);
+  li.addEventListener('focusin', () => highlightStep(routeSvg, st.id));
   const dec = el('input', { value: st.decision ?? '', placeholder: editable ? 'Decision made here (optional)' : '', disabled: !editable, ariaLabel: 'Decision', onchange: () => update((d) => E.setDecision(d, st.id, dec.value)) });
   if (st.decision || editable) li.append(el('div', { className: 'decision' }, el('span', { className: 'hint', textContent: 'Decision' }), dec));
   if (st.reason?.words) li.append(el('p', { className: 'reason', textContent: `“${st.reason.words}”` }));
@@ -122,6 +136,7 @@ function btn(label, onclick, disabled = false, aria, extra = '') {
   return b;
 }
 
+$('fit').onclick = () => { const on = $('route').classList.toggle('fit'); $('fit').setAttribute('aria-pressed', String(on)); $('fit').textContent = on ? 'Full size' : 'Fit to width'; };
 $('customize').onclick = () => open({ id: null, draft: cur.draft, editable: true, saved: false });
 $('name').onchange = () => cur.editable && update((d) => E.setProcessName(d, $('name').value));
 $('add-step').onclick = () => { if ($('new-step').value.trim()) { update((d) => E.addStep(d, $('new-step').value)); $('new-step').value = ''; } };

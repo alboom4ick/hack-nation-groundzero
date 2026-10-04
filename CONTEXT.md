@@ -67,6 +67,10 @@ _Avoid_: paused, muted, private mode
 The clickable timeline of steps that Map produces and Teach consumes.
 _Avoid_: workflow, process doc, BPMN
 
+**Route map**:
+A Work Map drawn as a graph on the action trees page: Steps as tasks along one main line, a Decision as a gateway on it, each Guardrail as a branch that forks off before its Step. Limits and exceptions rejoin the line, a stop-and-ask ends in a stop. It borrows git-network lanes and BPMN shapes but is a view, not a BPMN model.
+_Avoid_: BPMN diagram, flowchart
+
 **Step**:
 One business action in a Work Map, with its screen moment, decision, reason and guardrails.
 _Avoid_: segment, node, task

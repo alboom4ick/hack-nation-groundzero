@@ -13,6 +13,7 @@ import { listCustom } from './tree-store.js';
 import { answerSaves } from './save-hold.js';
 import { ocrEnabled, setOcrEnabled } from './ocr-redact.js';
 import { openIsland, closeIsland, dismissIsland } from './island.js';
+import { renderRouteMap, renderMiniRoute } from './route-map.js';
 import { stepGuide, explainStep, predictionPrompt, isJudgment, createLesson, summarySpeech, mmss, CHECK_SPEECH } from './tutor-logic.js';
 
 const T = { checkGapSec: 4 }; // seconds between screen checks; when the new hire has paused is the screen watch's call
@@ -39,10 +40,29 @@ function setMap(m, source) {
   renderSteps();
 }
 
+// Where the new hire is on the route: the step they are on, steps done, and steps where they slipped.
+function lessonStatus() {
+  const out = {};
+  workMap.steps.forEach((s, i) => {
+    const r = lesson.record[s.id];
+    if (r.predicted === 'wrong' || r.violations) out[s.id] = 'wrong';
+    else if (i === lesson.current) out[s.id] = 'now';
+    else if (i < lesson.current || r.touched || r.predicted === 'right') out[s.id] = 'done';
+  });
+  return out;
+}
+
 function renderSteps() {
+  const status = lessonStatus();
+  const route = renderRouteMap(workMap.steps, { status, onSelect: (id) => document.getElementById(`tstep-${id}`)?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) });
+  $('route').replaceChildren(route);
+  // Keep "you are here" in view inside the map without moving the page.
+  const wrap = $('route'), here = route.querySelector('.st-now rect');
+  if (here) wrap.scrollLeft += here.getBoundingClientRect().left - wrap.getBoundingClientRect().left - (wrap.clientWidth - here.getBoundingClientRect().width) / 2;
   $('steps').replaceChildren(...workMap.steps.map((s, i) => {
     const r = lesson.record[s.id];
     const li = el('li', `tstep${i === lesson.current ? ' now' : ''}${r.predicted === 'right' ? ' right' : ''}${r.predicted === 'wrong' || r.violations ? ' wrong' : ''}`);
+    li.id = `tstep-${s.id}`;
     li.append(el('h4', '', `${i + 1}. ${s.title}`));
     if (s.decision) li.append(el('div', 'meta', `Decision: ${s.decision}`));
     if (isJudgment(s)) li.append(el('div', 'meta', `${s.guardrails.length} guardrail${s.guardrails.length === 1 ? '' : 's'}`));
@@ -58,10 +78,7 @@ function renderGuide() {
   const n = workMap.steps.length, i = lesson.current;
   const step = lesson.step;
   $('guide-count').textContent = step ? `Step ${i + 1} of ${n}` : `${n} steps`;
-  $('guide-dots').replaceChildren(...workMap.steps.map((s, k) => {
-    const r = lesson.record[s.id];
-    return el('span', `gdot${k === i ? ' now' : ''}${k < i || r.touched ? ' done' : ''}${r.violations ? ' wrong' : ''}`);
-  }));
+  $('guide-dots').replaceChildren(renderMiniRoute(workMap.steps, { status: lessonStatus() }));
   $('guide-title').textContent = step ? step.title : 'Press Start practising to begin';
   $('guide-list').replaceChildren(...(step ? stepGuide(step) : []).map((l) => {
     const li = el('li', `g-${l.kind}`);

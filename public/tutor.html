@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GroundZero Tutor</title>
 <link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="route-map.css">
 <script type="module" src="a11y.js"></script>
 <style>
   ol.steps { list-style:none; margin:0; padding:0; }
@@ -18,7 +19,7 @@
   #guide { flex:1 0 100%; border-top:1px solid var(--line); padding-top:10px; }
   #guide-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   #guide-count { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  #guide-dots { display:flex; gap:4px; }
+  #guide-dots { display:block; flex:1; max-width:260px; }
   .gdot { width:8px; height:8px; border-radius:50%; background:var(--line); }
   .gdot.done { background:var(--ok); } .gdot.wrong { background:var(--warn); }
   .gdot.now { background:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
@@ -103,6 +104,8 @@
     <div class="live-options inline">
     <label class="hint check"><input id="ocr-pii" type="checkbox"> Also find and black out IBANs, emails and phone numbers on screen automatically (slower)</label>
     </div>
+    <div id="route" class="rm-wrap" aria-label="Route map of this lesson"></div>
+    <p class="legend" aria-hidden="true"><span><i></i>Step</span><span><i class="gw"></i>Decision</span><span><i class="lim"></i>Limit</span><span><i class="exc"></i>Exception</span><span><i class="stp"></i>Stop and ask</span></p>
     <ol id="steps" class="steps"></ol>
   </div>
 
