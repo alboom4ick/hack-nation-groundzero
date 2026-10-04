@@ -29,8 +29,9 @@ Open gaps are tracked in [TODO.md](TODO.md) as `G1…G13` (plus `S1…S3`, `MS`)
 
 ## 1. What we build
 
-A working end-to-end MVP that **captures** what an expert knows while they work on a screen, **maps** it into a workflow anyone can follow, and **teaches** it to the next generation.
-An ElevenLabs voice agent watches the expert's screen, asks *why* at the right moments and runs a short debrief until it fully understands the process.
+**GroundZero is an AI apprentice for desk work.** An expert does a real task on their own screen while talking normally. The apprentice watches the screen, stays quiet while the expert types, reads or talks, and asks *why* at natural pauses. When the task is over it runs a short spoken debrief, explains the whole process back for the expert to confirm, and produces a **Work Map**. A voice tutor then uses that Work Map to coach a new hire through a case the expert never showed, and stops them before they save a wrong decision.
+
+> The expert leaves. The judgment stays. The next person (or agent) decides the way the expert would.
 
 **An apprentice, not a recorder.** A recorder captures what happened. An automation tool copies clicks. An apprentice asks why, learns the rules and guardrails behind each step, and keeps asking until nothing is unclear. If a new person could not do the task from what it learned, it is not an AI Apprentice.
 
@@ -42,7 +43,61 @@ Problems we solve:
 | Recordings show what, not why | Screen recordings and click logs cannot tell a judgment call from a habit or a mistake |
 | Guardrails are invisible | Limits, exceptions and the moment to stop and ask are rarely written down |
 
-**Use case and interface are ours.** Running example: invoicing (accounts payable). Any knowledge-driven desk work fits. Interface: side panel, floating voice companion (Picture-in-Picture), replayable timeline.
+### Who uses it
+
+| Person | What they do | Where |
+|---|---|---|
+| **Expert** (for example an accounts-payable clerk) | Shares their screen and works a real task; answers a few questions; confirms the teach-back | `/` (Capture and Map) |
+| **New hire** | Works a case on their own screen; predicts the expert's next decision; is stopped before a wrong save | `/tutor.html` (Teach) |
+| **Team lead** | Browses saved action trees, switches steps and guardrails on or off for their own use case, attaches videos | `/trees.html` |
+| **A software agent** | Loads the exported guardrails (or asks the MCP tool) and stops where the expert would | `public/agent-export.js`, `POST /mcp` |
+
+### How it works, end to end
+
+1. **Capture.** The expert presses *Start showing my work* and shares a window. A floating helper (Picture-in-Picture) shows what the apprentice is doing. About every 1.5 seconds a frame is masked in the browser (regions painted black, optional OCR masking of IBANs, emails and phone numbers) and a vision model turns what changed into a short event such as "Cost center changed from 4711 to 0400". The apprentice speaks only at a **pause**: the screen has been still *and* the expert has stopped talking (Scribe v2 Realtime). It asks at most 5 live questions per 10 minutes, ranked guardrail first, then a decision, then a missing detail, and the vision prompt tells the model never to ask what the screen already shows. A running counter shows "asked n of 3", because the brief requires at least three questions, one of them about a guardrail.
+2. **Map.** When the task ends, an LLM merges the events, the transcript and the live answers into Work Map steps and lists what is still unclear. A spoken debrief asks at least three follow-ups the expert did not answer while working. The apprentice then explains the whole process back in its own words (**teach-back**); a correction counts as *not* confirmed, and the debrief is only complete after at least three answered follow-ups and a confirmed teach-back.
+3. **Work Map.** A clickable timeline. Every step shows its screen moment, the decision, the reason **in the expert's own words** and the guardrails around it. A quote is accepted only if it appears in something the expert actually said; anything else is dropped and counted, never shown as if the expert had said it. The expert can delete a step, answer or quote afterwards and the exports no longer contain it.
+4. **Teach.** The tutor explains each step in the expert's words, asks the new hire to predict the next decision, and watches their screen the same way Capture does. On a new case it steps in **before** the save: the sandbox ERP asks the open tutor first (the **save hold**) and only saves on a clean check. A violation is explained with the expert's reasoning, and the tutor can replay the expert's screen moment. At the end it shows what the new hire has mastered and what to practise next.
+5. **Hand off.** The same Work Map exports as plain instructions for an AI agent ("Export for an agent") and is served as a guardrail lookup over MCP, so the next hire can also be an agent that stops where the expert would.
+
+### The Work Map
+
+The Work Map is the product's core artifact: JSON in which every claim is tied to the expert's words and to a moment on screen.
+
+```json
+{
+  "schema": "groundzero.work-map/1",
+  "process": { "name": "Supplier invoice coding" },
+  "steps": [{
+    "id": "s4",
+    "title": "Code invoice to cost center",
+    "screen_moment": { "t": 120, "t_end": 198, "nodes": ["n4"] },
+    "decision": "Re-code from opex (4711) to capex (0400)",
+    "reason": { "words": "Equipment over 5,000 euro is always capex.", "source": "live",
+                "screen_moment": { "t": 195, "node": "n4" } },
+    "guardrails": [{ "kind": "limit", "rule": "Equipment over 5,000 EUR is booked as capex (0400)",
+                     "words": "Equipment over 5,000 euro is always capex.", "source": "live",
+                     "screen_moment": { "t": 195, "node": "n4" } }]
+  }],
+  "debrief": { "followups": [], "teach_back": {}, "followups_answered": 3, "confirmed": true, "complete": true }
+}
+```
+
+A guardrail has a `kind`: `limit` ("over 5,000 EUR"), `exception` ("this supplier double-bills in December") or `stop_and_ask` ("no asset number, ask the controller").
+
+### Everything else in the product
+
+| Piece | What it is | Where |
+|---|---|---|
+| **Sandbox ERP** | A fake supplier-invoice app (four invoices, one over the 5,000 EUR capex line, one from a supplier that double-bills in December, one unseen 7,200 EUR case) that holds a save until the tutor answers | `/sandbox/` |
+| **Action trees page** | Browse saved Work Maps, draw them as a route map (steps along one main line, each guardrail a branch that forks off before its step), switch steps and guardrails on or off for your own use case, attach videos | `/trees.html`, `public/route-map.js`, `public/tree-edit.js` |
+| **Two experts, one task** | Compare two Work Maps, list where decisions or guardrails differ, and the why-question for each expert. The logic is built and tested; its controls are not on the Capture page right now | `public/compare.js` |
+| **Any language** | The expert can work in many languages; quotes keep their language with an English gloss; the tutor teaches in English. The language list and the model prompts are built; the picker is not on the Capture page right now, so the language stays at the stored value (English by default) | `public/language.js` |
+| **AR task per transaction** | A QR code per invoice opens a camera page with a small action to perform (key sequence, hand gesture or taps) | `/ar/` |
+| **Landing page** | The pitch, the Apprentice Test and the moonshot | `/landing/` |
+
+### What the product is not
+It is not a screen recorder, not an RPA tool that replays clicks, and not a meeting summarizer. It never invents a rule: a step with no reason and no guardrail stays that way, and is marked as unlinked instead of being filled in.
 
 ## 2. Modules (all three are required)
 
@@ -152,7 +207,7 @@ Suggested wiring from the brief: (1) the browser shares the screen, a frame ever
 ## 9. Run it
 
 ```bash
-npm install        # no dependencies, Node 20+
+npm install        # Node 20+; installs pg and the AWS S3 client (used only by the action trees page)
 cp .env.example .env   # ELEVENLABS_API, ANTHROPIC_API_KEY
 node scripts/setup-agents.js   # creates the interviewer and tutor agents, writes their ids to .env
 npm start          # http://localhost:3000   (expert: /   tutor: /tutor.html   landing page: /landing/)
@@ -161,11 +216,100 @@ npm test
 
 `.env` is git-ignored. Never commit keys.
 
+Optional: `DATABASE_URL` (Postgres, see `infra/`) and `S3_VIDEO_BUCKET` / `AWS_REGION` store action trees and their videos; without them the action trees page falls back to this browser's `localStorage`. `ELEVENLABS_VOICE_ID` picks the voice. `ANTHROPIC_WORKSPACE_ID` is needed if the Anthropic key is scoped to a workspace (without it every model call fails with a 400).
+
 Deploy: `vercel deploy --prod`. `api/index.js` runs the same handler (`lib/app.js`) as `npm start`; the env vars from `.env.example` and both `ELEVENAGENTS_*_ID` must be set on the Vercel project.
 
 ## 10. Out of scope (deliberately removed)
 
 Anything not required by the brief was cut so the pitch stays Capture → Map → Teach: mobile AR workflow player, physical-task vocabulary, uploaded-video mode, the standalone BPMN action-tree editor (its useful part became the agent-ready export, S3).
+
+## 11. How we built it
+
+**Stack.** Plain ES modules in the browser and on Node 20+, no framework and no build step. One request handler (`lib/app.js`) serves everything: `server.js` runs it locally, `api/index.js` runs the same handler as a Vercel function. About 4,800 lines of JavaScript, 163 tests (`node:test`).
+
+**Architecture.** The browser does the watching, the server only holds the API keys and talks to the models.
+
+```
+ Expert's browser                                         Server (lib/app.js)               Services
+ ----------------                                         -------------------               --------
+ getDisplayMedia ──► frame every ~1.5 s ──► mask (regions + opt-in OCR) ─┐
+ mic ──► Scribe v2 Realtime (pause, narration) ◄── GET /api/scribe/token ──────────────────► ElevenLabs Scribe
+ screen probe (128x72 diff) ─► pause = still screen AND quiet voice ─┐
+                                                                     ▼
+ pacing.js: what to ask, how often ──► voice turn ──► ElevenAgents interviewer ◄─ /api/agent/session ─► ElevenAgents
+                                         (fallback: TTS ◄─ POST /api/tts, STT ─► POST /api/stt) ────► ElevenLabs TTS / STT
+ masked frames ───────────────────────────────────────────► POST /api/describe ─► lib/model.js ─────► Claude (vision)
+ Map: events + answers ───────────────────────────────────► POST /api/workmap ──► sanitizeWorkMap ──► Claude
+ Teach: new hire's screen ────────────────────────────────► POST /api/tutor/check, /predict ────────► Claude
+ sandbox Save ─► save-hold.js ─► asks the open tutor tab first
+ action trees page ───────────────────────────────────────► /api/trees, /api/videos ─► Postgres + S3 (presigned URLs)
+ any agent ───────────────────────────────────────────────► POST /mcp  (lookup_guardrails)
+```
+
+**Design rules we followed.**
+- *Model output is untrusted.* Every model reply is parsed and sanitized in a pure module before it is used: unknown fields are dropped, quotes that are not the expert's words are dropped and counted, frame numbers are clamped.
+- *Pure logic, thin DOM.* Pacing, pause detection, the voice turn, the debrief, the lesson, route-map layout and tree editing take plain data and return plain data, so they are unit-tested in Node without a browser.
+- *Ask less, later.* A segment gets at most two questions, a routine step none, and "Answer open questions" at most six; the rest wait for the debrief.
+- *Stay quiet by default.* The interviewer's microphone is open only while a question is out, so the agent can never chime in on its own. Our pause detector decides when it may speak.
+- *Privacy before the network.* Speech is redacted before it is stored or sent to a model; frames are masked in the browser; "Off the record" suspends the watch and cancels any question in flight.
+
+**Process.** Built over one hackathon with Claude Code. The domain language is fixed in `CONTEXT.md`; the gaps against the brief are tracked as `G1…G13` in `TODO.md`; an architecture pass split the code into one module per concern (model call, voice turn, screen watch, debrief, pacing, lesson, Work Map reader).
+
+## 12. What worked
+
+Each item says how we know. Nothing here is a claim about a full live rehearsal (see section 13).
+
+| What | Evidence |
+|---|---|
+| The logic of all three modules | `npm test`: 163 tests pass |
+| The tutor catches the unseen invoice | A live call to the real model flagged cost center 4711 on the unseen 7,200 EUR invoice and quoted the expert (2026-10-04) |
+| The Work Map can be handed to an agent | `node scripts/verify-export.js` ran the unseen case against an agent holding only the exported instructions; it stopped and asked the controller (2026-10-04) |
+| Capture and Teach in a browser | Run with a synthetic screen and a stubbed network |
+| Quote grounding rejects invented reasons | Covered by `test/workmap.test.js`; a reason or guardrail with no matching words from the expert is dropped |
+| Voice round trip | ElevenLabs text-to-speech then Scribe speech-to-text returned the exact sentence; the deployed site's voice and Scribe-token routes answered correctly |
+| One masked-frame path | Capture and Teach share `screen-watch.js`; a frame whose masking fails is withheld, not sent |
+| Asking less | A segment is capped at two questions and the post-task Q&A at six (`test/describe.test.js`, `test/pacing.test.js`) |
+| Single model for vision and structuring | Claude does screen events, the Work Map, the teach-back, the judge and the tutor checks behind one function (`lib/model.js`), which retries once with a larger budget when a reply is cut off |
+
+## 13. What didn't work (yet)
+
+We would rather say this plainly than let a judge find it.
+
+- **Nothing has been rehearsed end to end with a real voice and a shared screen (G10).** The numbers in `PITCH.md` marked *measure* (pause latency, questions per 10 minutes, follow-ups answered, prediction score, redactions) are not filled in, so we do not claim them.
+- **The ElevenAgents path is untested live (G1, G3, G11).** The interviewer and tutor agents are created by `scripts/setup-agents.js`, but screen events go in as contextual updates rather than a client tool, the knowledge-base upload (`POST /api/tutor/knowledge`) has never been run against the real API, and Procedures are not built. When the agents are not configured, the app falls back to the built-in voice.
+- **The guardrail MCP tool is not registered on the tutor agent (G9).** It needs a public URL; `/mcp` itself works.
+- **Redaction has gaps (G6).** Speech is redacted by regex (IBAN, email, phone), which also wrongly swallows long spaced numbers such as "15 000 000 EUR". Names and addresses are not detected (Presidio needs a Python service). Frame masking by region is configurable, but the opt-in OCR pass has not been run with real tesseract in a browser. The recorded video file itself is not redacted.
+- **Known bug in quote grounding.** A quote is matched as a substring of the expert's words, with no word boundaries, so a quote of "5,000 EUR" is accepted against an expert who said "over 15,000 EUR". The attached words are the expert's real sentence, but the model's paraphrased rule could carry the wrong number.
+- **The sample Work Map is hand-written** (`"sample": true`) and has no recording behind it, so the tutor shows the time of an expert's screen moment but cannot replay it (G5). Recording a real session on the sandbox is the next step.
+- **Pause detection depends on the screen changing.** A segment closes only after the shared window changes and then stays still, so a window that never changes produces no questions. Early on it also asked too many (a generic question per empty detail); that is fixed by the caps described above.
+- **A save in another application cannot be held.** Only the sandbox ERP asks the tutor first; anything else is caught at the next pause.
+- **Two things we tried and dropped.** An open-source vision model bake-off was cut for a single hosted vision model, and the mobile AR workflow player was removed from the main flow (a small AR page remains as a side demo). A browser-local "Action Store" for saved Work Maps was prototyped and not kept; saved trees now live in the Postgres-backed action trees page.
+- **Environment pitfalls we hit.** An Anthropic key that is not scoped to a workspace makes every model call fail with a 400 (`anthropic-workspace-id`), and a misspelled ElevenLabs key variable silently disabled all voice routes. `.env.example` now lists the exact names.
+
+## 14. Key tools for the technical demo
+
+| Tool | Role in the product | Where |
+|---|---|---|
+| **Claude** (`claude-sonnet-5-5`) | Vision: turns frames into screen events. Language: Work Map, follow-ups, teach-back, judge, tutor checks and prediction grading | `lib/model.js`, `lib/describe.js`, `lib/workmap.js`, `lib/tutor.js` |
+| **ElevenAgents** | The interviewer and tutor voice roles, with Expressive Mode | `lib/agents.js`, `scripts/setup-agents.js`, `public/agent.js` |
+| **ElevenLabs Scribe v2 Realtime** | Knows when the expert pauses and writes down what they say while working | `public/scribe.js`, `public/screen-watch.js` |
+| **ElevenLabs TTS and STT** | The built-in voice used when the agents are not set up, and for the teach-back | `POST /api/tts`, `POST /api/stt`, `public/voice.js` |
+| **ElevenLabs MCP** | A guardrail lookup any agent can call at decision time | `lib/guardrail-mcp.js`, `POST /mcp` |
+| **Browser APIs** | Screen capture (`getDisplayMedia`), canvas probes and masking, `MediaRecorder`, Document Picture-in-Picture for the floating helper | `public/live.js`, `public/island.js`, `public/screen-watch.js` |
+| **tesseract.js** (opt-in) | In-browser OCR that blacks out lines containing an IBAN, email, phone or long number | `public/ocr-redact.js`, `public/frame-redact.js` |
+| **MediaPipe Hands** (AR page only) | Hand gesture detection, loaded from a CDN on first use | `public/ar/` |
+| **Vercel** | Hosting: static `public/` plus the same handler as a function | `vercel.json`, `api/index.js` |
+| **AWS Aurora Serverless v2 (Postgres) and S3, via Terraform** | Saved action trees and their videos (videos upload and play through presigned URLs, never through our server) | `infra/`, `lib/trees-db.js`, `lib/videos.js` |
+| **Node's test runner** | 163 unit tests of the pure modules | `npm test` |
+| **Claude Code** | Used to build the project | |
+
+**Suggested technical demo order (about 3 minutes).**
+1. Show `README` section 11's diagram: the browser watches, the server only holds keys.
+2. Open `/` and `/sandbox/`, start Capture, process one invoice out loud; point at the status line ("asked 1 of 3", why it is holding a question).
+3. Build the Work Map; click a guardrail to show its screen moment and the expert's own words.
+4. Open `/tutor.html`, work the unseen 7,200 EUR invoice, and show the save hold refusing the save with the expert's reasoning.
+5. Open `/trees.html` for the route map, then show the agent export and `node scripts/verify-export.js`.
 
 ## AR task per transaction (QR)
 
