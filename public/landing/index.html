@@ -9,6 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1d1a'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%238fd1c7' stroke-width='1.6' opacity='.45'/%3E%3Ccircle cx='16' cy='16' r='6.5' fill='none' stroke='%238fd1c7' stroke-width='1.8'/%3E%3Ccircle cx='16' cy='16' r='2.6' fill='%23f0a93b'/%3E%3C/svg%3E">
 <script>document.documentElement.classList.add('js')</script>
 <script type="module" src="/a11y.js"></script>
+<script type="module" src="/how.js"></script>
 <style>
 @font-face { font-family:'Atkinson Hyperlegible'; font-weight:400; font-display:swap; src:url(/fonts/atkinson-400.woff2) format('woff2'); }
 @font-face { font-family:'Atkinson Hyperlegible'; font-weight:700; font-display:swap; src:url(/fonts/atkinson-700.woff2) format('woff2'); }
@@ -349,6 +350,17 @@ footer .wrap { display:flex; justify-content:space-between; gap:24px; flex-wrap:
 footer .brand { color:var(--night-fg); font-size:20px; }
 .foot-a11y { display:none; }
 
+/* How it works: big hero button and the pop-up with the Remotion clips */
+.hero .cta { align-items:center; }
+.btn.xl { min-height:68px; padding:12px 34px 12px 14px; gap:16px; font-size:21px; }
+.btn.how-btn { background:var(--night-fg); border-color:var(--night-fg); color:var(--night); }
+.btn.how-btn:hover { box-shadow:0 14px 34px rgba(143,209,199,.38); }
+.btn.how-btn .play { position:relative; flex:none; width:42px; height:42px; border-radius:50%; background:var(--amber-lt); display:grid; place-items:center; }
+.btn.how-btn .play svg { width:16px; height:16px; margin-left:3px; fill:#201300; }
+.btn.how-btn .play::after { content:''; position:absolute; inset:-2px; border-radius:50%; border:2px solid var(--amber-lt); animation:pulse-ring 2.4s ease-out infinite; }
+@keyframes pulse-ring { from { transform:scale(1); opacity:.85; } to { transform:scale(1.75); opacity:0; } }
+
+
 /* Responsive */
 @media (max-width:1180px) { .nav nav { display:none; } .nav #a11y { margin-left:auto; } }
 @media (max-width:1020px) {
@@ -404,7 +416,7 @@ footer .brand { color:var(--night-fg); font-size:20px; }
     </a>
     <nav aria-label="Sections">
       <a href="#problem">The problem</a>
-      <a href="#how">How it works</a>
+      <a href="#how" data-how>How it works</a>
       <a href="#test">Apprentice Test</a>
       <a href="#moonshot">Moonshot</a>
     </nav>
@@ -423,8 +435,8 @@ footer .brand { color:var(--night-fg); font-size:20px; }
       <h1>Twenty-four years of judgment shouldn’t retire <span style="white-space:nowrap">without</span> asking <em>why<svg viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><path d="M2 12 C 20 2, 34 20, 52 10 S 84 4, 98 12"/></svg></em></h1>
       <p class="lede">GroundZero is an AI apprentice. It watches an expert work, asks <b style="color:var(--night-fg)">why</b> at the right pause, and turns the answers into a Work Map that teaches the next hire, and the next agent.</p>
       <div class="cta">
+        <a class="btn how-btn xl" href="#how" data-how><span class="play" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 1.5v13l11-6.5z"/></svg></span>How it works</a>
         <a class="btn amber" href="/">Start capturing <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg></a>
-        <a class="btn ghost" href="#how">See how it learns</a>
       </div>
       <ul class="proof">
         <li>Asks only at natural pauses</li>
@@ -708,6 +720,7 @@ footer .brand { color:var(--night-fg); font-size:20px; }
   </div>
 </footer>
 
+
 <script>
 (() => {
   const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -918,5 +931,6 @@ footer .brand { color:var(--night-fg); font-size:20px; }
   })();
 })();
 </script>
+
 </body>
 </html>

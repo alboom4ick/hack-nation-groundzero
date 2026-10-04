@@ -1,0 +1,59 @@
+/* "How it works" pop-up with the Remotion clips. Self-contained: used by the app (index.html) and the landing page. */
+.how { --night:#0b1d1a; --night-line:rgba(143,209,199,.22); --night-fg:#e9f1ec; --night-muted:#a3bbb3; --amber-lt:#f0a93b; --glow:#2dd4bf;
+  --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif; --sans:'Atkinson Hyperlegible',system-ui,sans-serif; }
+.how, .how button, .how a { font-family:var(--sans); }
+.how h2, .how h3 { font-family:var(--serif); letter-spacing:-.015em; margin:0; font-weight:700; }
+.how p { margin:0; }
+.how .hbtn { display:inline-flex; align-items:center; gap:10px; min-height:52px; padding:12px 24px; border-radius:999px; border:2px solid currentColor; background:transparent; color:inherit; text-decoration:none; font:700 17px/1 var(--sans); cursor:pointer; }
+.how .hbtn.amber { background:var(--amber-lt); border-color:var(--amber-lt); color:#201300; }
+.how .cta { display:flex; gap:14px; flex-wrap:wrap; }
+.how :focus-visible { outline:3px solid var(--glow); outline-offset:3px; border-radius:6px; }
+/* the card narrows with the window height, so a 16:9 clip plus its caption and controls fit without scrolling */
+.how { padding:0; border:0; background:transparent; color:var(--night-fg); width:min(calc(100vw - 24px), max(560px, min(1120px, calc((100vh - 390px) * 1.7778 + 52px)))); max-width:none; max-height:none; overflow:visible; margin:auto; }
+.how::backdrop { background:rgba(4,12,10,.8); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.how[open] { animation:how-in .35s cubic-bezier(.2,.8,.2,1); }
+@keyframes how-in { from { opacity:0; transform:translateY(22px) scale(.97); } }
+.how-card { position:relative; background:var(--night); border:1px solid var(--night-line); border-radius:28px; padding:22px 26px 20px; box-shadow:0 50px 120px rgba(0,0,0,.7); max-height:calc(100vh - 24px); overflow:auto; }
+.how-head { position:absolute; top:34px; right:38px; z-index:3; }
+.how-x { flex:none; width:46px; height:46px; border-radius:50%; border:1px solid var(--night-line); background:rgba(255,255,255,.05); color:inherit; display:grid; place-items:center; padding:0; }
+.how-x:hover { background:rgba(255,255,255,.12); }
+.how-x svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; }
+.how-stage { position:relative; aspect-ratio:16/9; border-radius:18px; overflow:hidden; background:#06130f; box-shadow:0 0 0 1px var(--night-line); }
+.how-stage video { width:100%; height:100%; max-height:none; display:block; object-fit:cover; cursor:pointer; border-radius:0; background:#06130f; }
+.how-poster { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; pointer-events:none; }
+.how[data-fresh][data-state="paused"] .how-poster { display:block; }
+.how-big { position:absolute; inset:0; margin:auto; width:92px; height:92px; border-radius:50%; border:0; background:var(--amber-lt); display:none; place-items:center; padding:0; box-shadow:0 14px 44px rgba(0,0,0,.55); }
+.how-big svg { width:34px; height:34px; margin-left:5px; fill:#201300; }
+.how[data-state="paused"] .how-big { display:grid; }
+.how-end { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:20px; text-align:center; background:rgba(6,19,15,.86); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.how[data-state="done"] .how-end { display:flex; }
+.how-end p { font:700 clamp(24px,3.2vw,38px)/1.15 var(--serif); max-width:22ch; }
+.how-end .cta { justify-content:center; }
+.how-tabs { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; list-style:none; margin:16px 0 0; padding:0; }
+.how-tabs button { width:100%; display:flex; flex-direction:column; gap:9px; padding:6px 0 4px; text-align:left; background:none; border:0; border-radius:6px; color:var(--night-muted); font:700 15px/1.2 var(--sans); }
+.how-tabs button:hover, .how-tabs button[aria-current="step"] { color:var(--night-fg); }
+.how-tabs .bar { display:block; height:5px; border-radius:5px; background:rgba(255,255,255,.16); overflow:hidden; }
+.how-tabs .bar i { display:block; height:100%; width:calc(var(--p, 0) * 100%); background:var(--glow); transition:width .25s linear; }
+.how-tabs button[aria-current="step"] .bar i { background:var(--amber-lt); }
+.how-tabs .t em { color:inherit; font-style:italic; font-weight:700; }
+.how-tabs .t b { color:var(--amber-lt); margin-right:6px; }
+.how-cap { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:28px; align-items:center; margin-top:16px; }
+.how-text h3 { font-size:clamp(20px,2.1vw,26px); margin-bottom:6px; }
+.how-text p { color:var(--night-muted); font-size:17.5px; line-height:1.5; max-width:74ch; min-height:4.5em; }
+.how-ctl { display:flex; gap:10px; }
+.how-b { min-height:48px; min-width:48px; padding:8px 20px; border-radius:999px; border:1px solid var(--night-line); background:rgba(255,255,255,.05); color:inherit; font:700 16px/1 var(--sans); }
+.how-b:hover:not(:disabled) { background:rgba(255,255,255,.13); }
+.how-b:disabled { opacity:.35; cursor:default; }
+.how-b#how-play { min-width:104px; background:var(--amber-lt); border-color:var(--amber-lt); color:#201300; }
+.how-b#how-play:hover { background:#f7bb5c; }
+.how[data-state="done"] #how-play { display:none; }
+.how .how-note { margin-top:12px; font-size:13.5px; color:var(--night-muted); opacity:.85; }
+@media (max-width:760px) {
+  .how-card { padding:16px 14px; border-radius:22px; }
+  .how-tabs { gap:6px; } .how-tabs .t em { display:none; }
+  .how-cap { grid-template-columns:1fr; gap:14px; }
+  .how-text p { font-size:16.5px; min-height:0; }
+  .how-big { width:68px; height:68px; } .how-big svg { width:26px; height:26px; }
+  .how-end .cta .btn { flex:1 1 100%; justify-content:center; }
+}
+@media (prefers-reduced-motion: reduce) { .how[open] { animation:none; } }

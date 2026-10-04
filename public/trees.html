@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="route-map.css">
 <script type="module" src="a11y.js"></script>
+<script type="module" src="home-link.js"></script>
 <style>
   .lib { display:grid; grid-template-columns:minmax(260px,340px) 1fr; gap:24px; align-items:start; }
   @media (max-width:860px) { .lib { grid-template-columns:1fr; } }
@@ -49,7 +50,7 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
-<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><a class="pill" href="./">Capture</a><div id="a11y"></div></div></header>
+<header class="app-header"><a class="brand" href="/" aria-label="GroundZero, home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</a><div class="row"><a class="pill" href="./">Capture</a><div id="a11y"></div></div></header>
 <main id="main">
   <p class="eyebrow">Action trees</p>
   <h1>Make it fit your work.</h1>
