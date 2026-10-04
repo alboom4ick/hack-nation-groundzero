@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { describeSegment } from './lib/describe.js';
 import { speak } from './lib/tts.js';
 import { transcribe } from './lib/stt.js';
-import { proposeLineage } from './lib/lineage.js';
-import { proposeSplit } from './lib/split.js';
+import { scribeToken } from './lib/scribe.js';
+import { signedUrl } from './lib/agents.js';
 import { checkAction, gradePrediction } from './lib/tutor.js';
 import { proposeWorkMap, explainWorkMap, judgeTeachBack } from './lib/workmap.js';
 
@@ -33,32 +33,34 @@ async function readJson(req) {
   return JSON.parse((await readRaw(req)).toString() || '{}');
 }
 
-// Accepts alternate spellings; the project's .env uses ELEVENLAPS_API.
 const need = (...names) => {
   const v = names.map((n) => process.env[n]).find(Boolean);
   if (!v) throw Object.assign(new Error(`${names[0]} is not set in .env`), { status: 500 });
   return v;
 };
 
-const elevenKey = () => need('ELEVENLABS_API', 'ELEVENLAPS_API', 'ELEVENLABS_API_KEY');
+const elevenKey = () => need('ELEVENLABS_API', 'ELEVENLABS_API_KEY');
+
+const agentIds = () => ({ tutor: process.env.ELEVENAGENTS_TUTOR_ID, interviewer: process.env.ELEVENAGENTS_INTERVIEWER_ID });
 
 const routes = {
+  'GET /api/scribe/token': async (req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify({ token: await scribeToken(elevenKey()) }));
+  },
+  'GET /api/agent/status': async (req, res) => {
+    const ids = agentIds();
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ tutor: !!ids.tutor, interviewer: !!ids.interviewer }));
+  },
+  'GET /api/agent/session': async (req, res) => {
+    const role = new URL(req.url, 'http://x').searchParams.get('role');
+    const id = agentIds()[role];
+    if (!id) throw Object.assign(new Error(`ElevenAgents ${role} is not set up (run node scripts/setup-agents.js)`), { status: 503 });
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ signedUrl: await signedUrl(id, elevenKey()) }));
+  },
   'POST /api/describe': async (req, res) => {
     const { frames, frameTimes, tStart, tEnd, context } = await readJson(req);
     if (!Array.isArray(frames) || !frames.length) throw Object.assign(new Error('frames required'), { status: 400 });
     const out = await describeSegment({ frames, frameTimes, tStart, tEnd, context }, need('ANTHROPIC_API_KEY'));
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
-  },
-  'POST /api/lineage': async (req, res) => {
-    const { nodes } = await readJson(req);
-    if (!Array.isArray(nodes) || !nodes.length) throw Object.assign(new Error('nodes required'), { status: 400 });
-    const out = await proposeLineage(nodes, need('ANTHROPIC_API_KEY'));
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
-  },
-  'POST /api/split': async (req, res) => {
-    const { node, instruction } = await readJson(req);
-    if (!node?.id || typeof instruction !== 'string' || !instruction.trim()) throw Object.assign(new Error('node and instruction required'), { status: 400 });
-    const out = await proposeSplit({ node, instruction: instruction.slice(0, 2000) }, need('ANTHROPIC_API_KEY'));
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
   },
   'POST /api/workmap': async (req, res) => {

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GroundZero</title>
 <link rel="stylesheet" href="theme.css">
+<script type="module" src="a11y.js"></script>
 <style>
   input[type=file] { width:100%; }
   progress { flex:1; min-width:120px; }
@@ -51,64 +52,57 @@
 </style>
 </head>
 <body>
-<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><span class="hint">Capture</span><span class="pill">Private workspace</span></div></header>
-<main>
-  <p class="eyebrow">Capture</p>
-  <h1>GroundZero</h1>
-  <p class="sub">Upload an expert video. It is cut into 2–4 s action segments for description and questioning.</p>
-
-  <div id="live-card" class="card">
-    <div class="row">
-      <button id="live-start">● Share screen &amp; start apprenticeship</button>
-      <span id="live-status" class="hint">Do a real task while talking. The apprentice watches, stays quiet while you type or speak, and asks <em>why</em> at natural pauses in a floating window.</span>
-    </div>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><div id="a11y"></div><span class="pill" title="Off the record pauses everything; personal data in speech is redacted">Off the record available</span></div></header>
+<main id="main">
+  <div class="hero">
+    <p class="eyebrow">Module 1 · Capture</p>
+    <h1>Pass on what you know.</h1>
+    <p class="sub">Do your job the way you always do, and talk through it out loud. We watch, ask a few friendly questions, and turn it into a guide for the next person.</p>
   </div>
 
-  <div class="card">
-    <div class="hint" style="margin-bottom:6px">…or upload a recorded session instead</div>
-    <input id="file" type="file" accept="video/*">
-    <video id="video" controls playsinline hidden></video>
-    <div class="row" style="margin-top:12px">
-      <button id="run" disabled>Segment video</button>
-      <progress id="bar" value="0" max="1" hidden></progress>
-      <span id="status" class="hint"></span>
-    </div>
-  </div>
+  <ol class="stepper" aria-label="Your progress">
+    <li class="now" aria-current="step"><b>1</b>Capture</li>
+    <li><b>2</b>Map</li>
+    <li><b>3</b>Teach</li>
+  </ol>
 
-  <div id="tools" class="row" hidden>
-    <button id="describe-all">Describe all segments</button>
-    <button id="voice-start">🎙 Start voice Q&amp;A</button>
-    <button id="build-tree">Build action tree</button>
-    <button id="build-map">Build Work Map</button>
+  <section id="live-card" class="card lead-card" aria-labelledby="live-h">
+    <div>
+      <h2 id="live-h">Do a real task, out loud</h2>
+      <p>Press the button, pick your screen, and carry on as normal. A small helper window will sit to one side.</p>
+      <ul class="promises">
+        <li>No rush. Take as long as you need.</li>
+        <li>It stays quiet while you are typing or talking, and only asks <em>why</em> when you pause.</li>
+        <li>Press <em>Off the record</em> at any time and nothing is kept.</li>
+      </ul>
+    </div>
+    <button id="live-start" class="big">● Start showing my work</button>
+    <span id="live-status" class="hint" role="status" aria-live="polite"></span>
+  </section>
+
+  <video id="video" controls playsinline hidden></video>
+  <div class="row"><progress id="bar" value="0" max="1" hidden></progress><span id="status" class="hint" role="status" aria-live="polite"></span></div>
+
+  <h2 class="next-title" id="next-title" hidden>What would you like to do next?</h2>
+<div id="tools" class="row" hidden>
+    <button id="build-map">Build the Work Map</button>
+    <button id="voice-start" class="ghost">🎙 Answer open questions</button>
   </div>
   <div id="workmap" class="card" hidden>
-    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Work Map</h3><span class="row"><button id="teach-map">Teach a new hire →</button><button id="download-map" class="ghost">Download JSON</button></span></div>
+    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Work Map</h3><span class="row"><button id="teach-map">Teach it to a new hire →</button><button id="download-map" class="ghost">Download Work Map</button><button id="download-agent" class="ghost" title="Steps and guardrails an AI agent can load">Export for an agent</button></span></div>
+    <div id="map-timeline" class="row" role="group" aria-label="Timeline: jump to a step"></div>
     <ol id="map-steps" style="list-style:none;margin:12px 0;padding:0"></ol>
     <div id="debrief" style="border-top:1px solid var(--line);padding-top:12px">
-      <div class="row"><button id="debrief-start">🎙 Run debrief</button><span id="debrief-status" class="hint"></span></div>
+      <div class="row"><button id="debrief-start">🎙 Debrief and teach-back</button><span id="debrief-status" class="hint"></span></div>
       <div id="debrief-open" class="hint" style="margin-top:6px"></div>
       <p id="teachback" style="margin:8px 0 0"></p>
     </div>
   </div>
-  <div id="tree" class="card" hidden>
-    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Action tree</h3><button id="download-json" class="ghost">Download JSON</button></div>
-    <div id="tree-svg" style="overflow-x:auto;margin:12px 0"></div>
-    <div id="tree-notes" class="hint"></div>
-    <div id="split" hidden style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
-      <div class="hint">Selected <b id="split-title"></b></div>
-      <p id="split-desc" style="margin:4px 0 8px"></p>
-      <div class="row">
-        <input id="split-input" type="text" placeholder="What did the expert say? e.g. first loosen the plug, then pull it out" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit">
-        <button id="split-mic" class="ghost" title="Say it">🎙</button>
-        <button id="split-go">Split node</button>
-      </div>
-      <div id="split-msg" class="hint" style="margin-top:6px"></div>
-    </div>
-  </div>
   <div id="segments"></div>
   <div id="pager" class="row" hidden>
-    <button id="prev">Previous</button>
-    <button id="next">Next</button>
+    <button id="prev" class="ghost">Previous</button>
+    <button id="next" class="ghost">Next</button>
     <span id="pageinfo" class="hint"></span>
   </div>
 </main>
@@ -122,8 +116,8 @@
   </div>
   <div class="col" style="display:flex;flex-direction:column;gap:6px">
     <button id="island-rec" class="ghost" hidden title="Pause capture and questions; nothing is recorded">Off the record</button>
-    <button id="voice-skip" class="ghost">Skip</button>
-    <button id="voice-end" class="ghost">End</button>
+    <button id="voice-skip" class="ghost">Skip this one</button>
+    <button id="voice-end" class="ghost">Stop</button>
   </div>
 </div>
 <script type="module" src="app.js"></script>

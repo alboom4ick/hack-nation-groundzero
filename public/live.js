@@ -1,6 +1,10 @@
 // Live capture: the expert shares their screen, the apprentice watches quietly and asks "why" at natural pauses.
 // The voice panel floats in a Picture-in-Picture window (the "island") while the agent is working.
 import * as voice from './voice.js';
+import { openAgent, agentAvailable } from './agent.js';
+import { openScribe } from './scribe.js';
+import { createVoiceGate } from './pause.js';
+import { redact } from './redact.js';
 
 const T = {
   probeMs: 500,         // activity probe period
@@ -18,12 +22,7 @@ const T = {
   segMaxFrames: 3,
 };
 
-const PII = [
-  [/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,4})?\b/g, '[IBAN]'],
-  [/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[EMAIL]'],
-  [/\+?\d[\d\s().-]{8,}\d/g, '[PHONE]'],
-];
-export const redact = (text) => PII.reduce((t, [re, tag]) => t.replace(re, tag), text);
+export { redact };
 
 // ---------- Picture-in-Picture island ----------
 let pip = null;
@@ -113,6 +112,52 @@ export async function startLive() {
   };
   const now = () => ((s.pausedAt ?? performance.now()) - s.t0 - s.pausedMs) / 1000;
 
+  // ElevenAgents is the interviewer when set up. Its mic stays muted while the expert works, so it can never
+  // chime in on its own: our pause detector decides when, and only then do we unmute and cue the question.
+  let agent = null, askDone = null, heard = [];
+  if (await agentAvailable('interviewer')) {
+    try {
+      agent = await openAgent({
+        role: 'interviewer', firstMessage: '',
+        tools: { question_done: () => askDone?.() },
+        onMessage: ({ source, message }) => { if (source === 'user' && askDone) heard.push(message); },
+        onMode: () => {},
+        onError: (m) => { el('voice-a').textContent = 'agent: ' + m; },
+      });
+      agent.mute(true);
+    } catch (err) {
+      $('live-status').textContent = `ElevenAgents unavailable (${err.message}); using the built-in voice.`;
+    }
+  }
+  // Scribe v2 Realtime tells us when the expert is talking and when they pause; it also writes down what they
+  // say while working, so reasons they give unprompted can be quoted in the Work Map.
+  s.narration = [];
+  const gate = createVoiceGate({ quietSec: T.quietSec });
+  let scribe = null;
+  const startScribe = async () => {
+    try {
+      scribe = await openScribe({
+        onSpeech: () => gate.partial(now()),
+        onCommit: (text) => { gate.committed(); if (!s.busy && !s.offRecord && !s.ended) s.narration.push({ t: +now().toFixed(2), text: redact(text) }); },
+      });
+      gate.setScribe(true);
+    } catch (err) {
+      gate.setScribe(false);
+      $('live-status').textContent = `Scribe unavailable (${err.message}); pauses are detected from the microphone level instead.`;
+    }
+  };
+  await startScribe();
+
+  const askViaAgent = (text) => new Promise((resolve) => {
+    heard = [];
+    const done = () => { clearTimeout(timer); askDone = null; agent.mute(true); resolve(heard.join(' ').trim()); };
+    const timer = setTimeout(done, 70000);
+    askDone = done;
+    agent.mute(false);
+    voice.setState('listening');
+    agent.cue(`[ASK] "${text.replace(/"/g, "'")}"`);
+  });
+
   $('live-card').classList.add('recording');
   $('live-start').disabled = true;
   $('live-status').textContent = 'Recording. Work normally; the apprentice is in the floating window.';
@@ -177,6 +222,15 @@ export async function startLive() {
     el('voice-q').textContent = item.q.text;
     el('voice-a').textContent = '';
     try {
+      if (agent) {
+        const said = await askViaAgent(item.q.text);
+        if (said && !s.ended) {
+          item.q.answer = redact(said);
+          item.q.answerT = now();
+          el('voice-a').textContent = item.q.answer;
+        }
+        return;
+      }
       voice.setState('speaking');
       await voice.speak(item.q.text);
       if (s.ended) return;
@@ -193,6 +247,7 @@ export async function startLive() {
     } finally {
       s.lastAskEnd = now();
       s.lastVoice = now();
+      gate.level(now());
       s.busy = false;
       if (!s.ended) voice.setState(s.offRecord ? 'private' : 'watching');
     }
@@ -215,7 +270,7 @@ export async function startLive() {
     }
     s.prev = d;
     const level = rms(analyser, micBuf);
-    if (level > T.voiceLevel) s.lastVoice = t;
+    if (level > T.voiceLevel) { s.lastVoice = t; gate.level(t); }
 
     if (t - s.lastFrame >= T.frameMs / 1000) {
       s.lastFrame = t;
@@ -229,9 +284,9 @@ export async function startLive() {
         });
     }
 
-    const screenIdle = t - s.lastActivity, quiet = t - s.lastVoice;
+    const screenIdle = t - s.lastActivity;
     if (screenIdle >= 2 && s.cur.frames.length >= 2) closeSegment();
-    const screenActive = screenIdle < T.idleSec, voiceActive = quiet < T.quietSec;
+    const screenActive = screenIdle < T.idleSec, voiceActive = gate.active(t);
     const recent = s.askTimes.filter((a) => t - a < 600).length;
     const item = pick();
     let note = '';
@@ -251,6 +306,10 @@ export async function startLive() {
     el('island-rec').setAttribute('aria-pressed', String(s.offRecord));
     el('island-rec').textContent = s.offRecord ? 'Back on record' : 'Off the record';
     if (s.offRecord) {
+      askDone?.();
+      scribe?.close();
+      scribe = null;
+      gate.setScribe(false);
       closeSegment(true);
       s.cur = { frames: [], frameTimes: [], active: false };
       s.pausedAt = performance.now();
@@ -262,6 +321,7 @@ export async function startLive() {
       s.prev = null;
       s.lastActivity = now();
       rec.resume();
+      startScribe();
       voice.setState('watching');
     }
   };
@@ -272,6 +332,9 @@ export async function startLive() {
     s.ended = true;
     clearInterval(timer);
     voice.interrupt();
+    askDone?.();
+    agent?.end();
+    scribe?.close();
     if (s.offRecord) toggleOffRecord();
     closeSegment(true);
     const stopped = new Promise((r) => { rec.onstop = r; });
@@ -292,7 +355,7 @@ export async function startLive() {
     $('live-start').disabled = false;
     $('live-status').textContent = `Session captured: ${s.segments.length} segments. Use the tools below to build the Work Map.`;
     session = null;
-    window.dispatchEvent(new CustomEvent('live:done', { detail: { blob: new Blob(chunks, { type: 'video/webm' }), segments: s.segments } }));
+    window.dispatchEvent(new CustomEvent('live:done', { detail: { blob: new Blob(chunks, { type: 'video/webm' }), segments: s.segments, narration: s.narration } }));
   };
   el('voice-end').onclick = finish;
   display.getVideoTracks()[0].addEventListener('ended', finish);

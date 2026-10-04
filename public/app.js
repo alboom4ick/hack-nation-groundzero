@@ -1,13 +1,8 @@
-import { segment } from './segmenter.js';
 import * as voice from './voice.js';
 import { startLive, openIsland, fixDuration } from './live.js';
-import { depths, toExport, splitNode } from './tree.js';
-import { toBpmn, layoutNodes } from './bpmn.js';
+import { toAgentInstructions, toAgentMarkdown } from './agent-export.js';
 import { toWorkMap, debriefStatus, ensureGuardrailQuestion } from './workmap.js';
 
-const SAMPLE_FPS = 4;      // motion sampling rate
-const PROBE = { w: 64, h: 36 };
-const THUMB_W = 640;
 const PAGE_SIZE = 5;
 
 // The voice panel may be floating in a Picture-in-Picture window; byId finds it wherever it is.
@@ -23,34 +18,17 @@ const video = $('video');
 let segments = [];
 let page = 0;
 let videoName = 'video';
-let treeNodes = [];
-let selectedId = null;
 
 function resetSession(name) {
   videoName = name;
-  treeNodes = [];
-  selectedId = null;
-  $('tree').hidden = true;
+  narration = [];
   $('workmap').hidden = true;
   mapSteps = []; mapUnclear = []; followups = []; teachBack = null;
   segments = [];
   $('segments').replaceChildren();
   $('pager').hidden = true;
-  $('tools').hidden = true;
+  $('tools').hidden = true; $('next-title').hidden = true;
 }
-
-$('file').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  resetSession(f.name);
-  video.src = URL.createObjectURL(f);
-  video.hidden = false;
-  $('status').textContent = 'loading…';
-  video.onloadedmetadata = () => {
-    $('run').disabled = false;
-    $('status').textContent = `${video.duration.toFixed(1)} s`;
-  };
-});
 
 // Live capture: the segments were cut and described while the expert worked.
 $('live-start').addEventListener('click', startLive);
@@ -62,87 +40,16 @@ window.addEventListener('live:done', async ({ detail }) => {
   video.hidden = false;
   await fixDuration(video);
   segments = detail.segments;
+  narration = detail.narration ?? [];
   page = 0;
   render();
   $('status').textContent = `${segments.length} live segments · ${video.duration.toFixed(1)} s`;
 });
 
-$('run').addEventListener('click', async () => {
-  $('run').disabled = true;
-  try {
-    const samples = await sampleMotion(video, (p) => setProgress(p * 0.7, 'measuring motion'));
-    segments = segment(samples, video.duration);
-    await attachThumbs(segments, (p) => setProgress(0.7 + p * 0.3, 'extracting frames'));
-    page = 0;
-    render();
-    $('status').textContent = `${segments.length} segments`;
-  } catch (err) {
-    $('status').textContent = 'failed: ' + err.message;
-  } finally {
-    $('bar').hidden = true;
-    $('run').disabled = false;
-  }
-});
-
-function setProgress(p, label) {
-  $('bar').hidden = false;
-  $('bar').value = p;
-  $('status').textContent = label;
-}
-
 function seek(v, t) {
   return new Promise((resolve) => {
     v.onseeked = () => resolve();
     v.currentTime = Math.min(t, v.duration - 0.01);
-  });
-}
-
-// Mean absolute luma difference between consecutive downscaled frames, 0..1.
-async function sampleMotion(v, onProgress) {
-  const c = new OffscreenCanvas(PROBE.w, PROBE.h);
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  const samples = [];
-  let prev = null;
-  const n = Math.floor(v.duration * SAMPLE_FPS);
-  for (let i = 1; i <= n; i++) {
-    const t = i / SAMPLE_FPS;
-    await seek(v, t);
-    ctx.drawImage(v, 0, 0, PROBE.w, PROBE.h);
-    const d = ctx.getImageData(0, 0, PROBE.w, PROBE.h).data;
-    if (prev) {
-      let sum = 0;
-      for (let p = 0; p < d.length; p += 4) sum += Math.abs(d[p] - prev[p]) + Math.abs(d[p + 1] - prev[p + 1]) + Math.abs(d[p + 2] - prev[p + 2]);
-      samples.push({ t, score: sum / (d.length / 4 * 3 * 255) });
-    }
-    prev = d;
-    onProgress(i / n);
-  }
-  return samples;
-}
-
-// JPEG data URLs for each segment's frames; these are also what gets sent to Claude later.
-async function attachThumbs(segs, onProgress) {
-  const h = Math.round((THUMB_W * video.videoHeight) / video.videoWidth);
-  const c = new OffscreenCanvas(THUMB_W, h);
-  const ctx = c.getContext('2d');
-  const total = segs.reduce((a, s) => a + s.frameTimes.length, 0);
-  let done = 0;
-  for (const s of segs) {
-    s.frames = [];
-    for (const t of s.frameTimes) {
-      await seek(video, t);
-      ctx.drawImage(video, 0, 0, THUMB_W, h);
-      s.frames.push(await blobToDataUrl(await c.convertToBlob({ type: 'image/jpeg', quality: 0.8 })));
-      onProgress(++done / total);
-    }
-  }
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.readAsDataURL(blob);
   });
 }
 
@@ -153,6 +60,12 @@ function render() {
   $('segments').replaceChildren(...slice.map(segmentCard));
 
   $('tools').hidden = !segments.length;
+  $('next-title').hidden = !segments.length;
+  if (segments.length) {
+    const li = document.querySelectorAll('.stepper li');
+    li[0]?.classList.replace('now', 'done'); li[0]?.removeAttribute('aria-current');
+    li[1]?.classList.add('now'); li[1]?.setAttribute('aria-current', 'step');
+  }
   $('pager').hidden = pages <= 1;
   $('prev').disabled = page === 0;
   $('next').disabled = page === pages - 1;
@@ -219,23 +132,14 @@ async function runDescribe(s, btn, out) {
   }
 }
 
-$('describe-all').addEventListener('click', async () => {
-  const btn = $('describe-all');
-  btn.disabled = true;
+async function describeAll() {
   const todo = segments.filter((s) => !s.result);
-  try {
-    for (const [i, s] of todo.entries()) {
-      $('status').textContent = `describing ${i + 1}/${todo.length}`;
-      await describeSeg(s);
-      render();
-    }
-    $('status').textContent = `${segments.length} segments described`;
-  } catch (err) {
-    $('status').textContent = 'failed: ' + err.message;
-  } finally {
-    btn.disabled = false;
+  for (const [i, s] of todo.entries()) {
+    $('status').textContent = `describing ${i + 1}/${todo.length}`;
+    await describeSeg(s);
+    render();
   }
-});
+}
 
 function showResult(s, out) {
   const r = s.result;
@@ -379,197 +283,22 @@ async function startVoice() {
 $('prev').addEventListener('click', () => { page--; render(); });
 $('next').addEventListener('click', () => { page++; render(); });
 
-// ---- Steps 7-8: lineage pass, action tree, JSON export ----
-const SVGNS = 'http://www.w3.org/2000/svg';
-const NODE = { w: 200, h: 64, gx: 70, gy: 16 };
-const SMALL = 44; // events and gateways
+// ---- Module 1 output: described segments and what the expert said ----
 const OPTIONAL = new Set(['location', 'target']);
+
+// What the expert said unprompted while working (Scribe), kept as their own words for the step it was said in.
+let narration = [];
+const saidDuring = (s) => narration.filter((n) => n.t >= s.tStart && n.t <= s.tEnd + 4).map((n) => ({ question: '(said while working)', answer: n.text, t: n.t }));
 
 function nodeInputs() {
   return segments.filter((s) => s.result).map((s) => ({
     id: `n${s.id + 1}`,
     description: s.result.description,
     slots: s.result.slots,
-    answers: s.result.questions.filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer, ...(Number.isFinite(q.answerT) ? { t: +q.answerT.toFixed(2) } : {}) })),
+    answers: [...s.result.questions.filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer, ...(Number.isFinite(q.answerT) ? { t: +q.answerT.toFixed(2) } : {}) })), ...saidDuring(s)],
     video_segment: { uri: videoName, t_start: +s.tStart.toFixed(2), t_end: +s.tEnd.toFixed(2) },
   }));
 }
-
-$('build-tree').addEventListener('click', async () => {
-  const btn = $('build-tree');
-  const inputs = nodeInputs();
-  if (!inputs.length) { $('status').textContent = 'Describe the segments first.'; return; }
-  btn.disabled = true;
-  $('status').textContent = 'building action tree…';
-  try {
-    const res = await fetch('/api/lineage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nodes: inputs }) });
-    const data = await readJson(res);
-    if (!res.ok) throw new Error(data.error ?? res.statusText);
-    const byId = new Map(data.lineage.map((l) => [l.id, l]));
-    treeNodes = inputs.map((n) => ({ ...n, ...byId.get(n.id) }));
-    renderTree(data.dropped.length);
-    $('status').textContent = `action tree: ${treeNodes.length} nodes`;
-  } catch (err) {
-    $('status').textContent = 'failed: ' + err.message;
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-function renderTree(droppedCount) {
-  $('tree').hidden = false;
-  const bpmn = toBpmn(treeNodes, { name: videoName.replace(/\.[^.]+$/, '') });
-  const d = depths(layoutNodes(bpmn));
-  const byId = new Map(treeNodes.map((n) => [n.id, n]));
-  const sizeOf = (n) => (n.bpmn_type === 'userTask' ? { w: NODE.w, h: NODE.h } : { w: SMALL, h: SMALL });
-
-  // Column width = widest node in it; nodes in a column stack top to bottom, centred in the column.
-  const cols = Math.max(...d.values()) + 1;
-  const colW = Array.from({ length: cols }, () => 0);
-  const rows = new Map();
-  const place = new Map();
-  for (const n of bpmn.nodes) {
-    const col = d.get(n.id);
-    const row = rows.get(col) ?? 0;
-    rows.set(col, row + 1);
-    colW[col] = Math.max(colW[col], sizeOf(n).w);
-    place.set(n.id, { col, row, ...sizeOf(n) });
-  }
-  const colX = colW.map((_, i) => colW.slice(0, i).reduce((a, w) => a + w + NODE.gx, 0));
-  for (const p of place.values()) {
-    p.x = colX[p.col] + (colW[p.col] - p.w) / 2;
-    p.y = p.row * (NODE.h + NODE.gy) + (NODE.h - p.h) / 2;
-  }
-  const width = colX.at(-1) + colW.at(-1);
-  const height = Math.max(...rows.values()) * (NODE.h + NODE.gy) - NODE.gy;
-  const svg = document.createElementNS(SVGNS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.setAttribute('width', width);
-  svg.style.maxWidth = '100%';
-
-  const el = (name, attrs, text) => {
-    const e = document.createElementNS(SVGNS, name);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    if (text != null) e.textContent = text;
-    return e;
-  };
-  const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
-
-  const marker = el('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
-  marker.append(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--muted)' }));
-  const defs = el('defs', {});
-  defs.append(marker);
-  svg.append(defs);
-  for (const f of bpmn.flows) {
-    const a = place.get(f.source);
-    const b = place.get(f.target);
-    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2;
-    const uncertain = byId.get(f.target)?.uncertain;
-    svg.append(el('path', { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': uncertain ? '5 4' : '0', 'marker-end': 'url(#arrow)' }));
-    const label = f.condition?.expression ?? (f.default ? 'otherwise' : '');
-    if (label) svg.append(el('text', { x: mx, y: (y1 + y2) / 2 - 4, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 10 }, clip(label, 24)));
-  }
-  for (const n of bpmn.nodes) {
-    const { x, y, w, h } = place.get(n.id);
-    const g = el('g', { transform: `translate(${x},${y})` });
-    if (n.bpmn_type === 'userTask') {
-      const t = byId.get(n.id);
-      g.style.cursor = 'pointer';
-      g.append(el('title', {}, `${t.description}\n\nContribution: ${t.contribution}\n${t.rationale}${t.ar ? `\n\nAR: ${t.ar.instruction} → ${t.ar.anchor.label}` : ''}`));
-      g.append(el('rect', { width: w, height: h, rx: 8, fill: 'var(--card)', stroke: n.id === selectedId ? 'var(--accent)' : t.uncertain ? '#d97706' : 'var(--line)', 'stroke-width': n.id === selectedId ? 3 : 1.5 }));
-      g.append(el('text', { x: 10, y: 20, fill: 'var(--accent)', 'font-size': 12, 'font-weight': 600 }, `${n.id} · ${t.video_segment.t_start}–${t.video_segment.t_end}s`));
-      g.append(el('text', { x: 10, y: 38, fill: 'var(--fg)', 'font-size': 12 }, clip(n.name, 30)));
-      g.append(el('text', { x: 10, y: 54, fill: 'var(--muted)', 'font-size': 11 }, clip(t.ar?.instruction ?? t.description, 34)));
-      g.addEventListener('click', () => selectNode(n.id));
-    } else if (n.bpmn_type.endsWith('Event')) {
-      g.append(el('title', {}, n.name));
-      g.append(el('circle', { cx: w / 2, cy: h / 2, r: w / 2 - 2, fill: 'var(--card)', stroke: n.id === 'start' ? '#16a34a' : '#dc2626', 'stroke-width': n.id === 'start' ? 2 : 4 }));
-    } else {
-      g.append(el('title', {}, `${n.name}\n${n.gateway.type}${n.gateway.decision_variable ? ` on ${n.gateway.decision_variable}` : ''}`));
-      g.append(el('path', { d: `M${w / 2},2 L${w - 2},${h / 2} L${w / 2},${h - 2} L2,${h / 2} z`, fill: 'var(--card)', stroke: '#d97706', 'stroke-width': 2 }));
-      const c = w / 2, r = 9;
-      g.append(el('path', {
-        d: n.bpmn_type === 'parallelGateway' ? `M${c - r},${c} H${c + r} M${c},${c - r} V${c + r}` : `M${c - 7},${c - 7} L${c + 7},${c + 7} M${c + 7},${c - 7} L${c - 7},${c + 7}`,
-        stroke: '#d97706', 'stroke-width': 2.5, fill: 'none',
-      }));
-      if (n.gateway.type === 'XOR') g.append(el('text', { x: c, y: -4, 'text-anchor': 'middle', fill: 'var(--fg)', 'font-size': 11 }, clip(n.name, 28)));
-    }
-    svg.append(g);
-  }
-  $('tree-svg').replaceChildren(svg);
-
-  const unsure = treeNodes.filter((n) => n.uncertain && n.question);
-  const notes = [];
-  if (droppedCount) notes.push(`${droppedCount} invalid link(s) dropped.`);
-  if (unsure.length) notes.push('Links to confirm (dashed): ' + unsure.map((n) => `${n.id}: ${n.question}`).join(' · '));
-  $('tree-notes').textContent = notes.join(' ');
-  renderSplitPanel();
-}
-
-function selectNode(id) {
-  selectedId = id;
-  const n = treeNodes.find((x) => x.id === id);
-  video.pause();
-  video.currentTime = n.video_segment.t_start;
-  renderTree(0);
-}
-
-function renderSplitPanel() {
-  const n = treeNodes.find((x) => x.id === selectedId);
-  $('split').hidden = !n;
-  if (!n) return;
-  $('split-title').textContent = `${n.id} · ${n.video_segment.t_start}–${n.video_segment.t_end}s${n.split_from ? ` (split from ${n.split_from})` : ''}`;
-  $('split-desc').textContent = n.description;
-}
-
-async function runSplit() {
-  const n = treeNodes.find((x) => x.id === selectedId);
-  const instruction = $('split-input').value.trim();
-  if (!n || !instruction) return;
-  $('split-go').disabled = true;
-  $('split-msg').textContent = 'Claude is checking…';
-  try {
-    const res = await fetch('/api/split', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ node: n, instruction }) });
-    const data = await readJson(res);
-    if (!res.ok) throw new Error(data.error ?? res.statusText);
-    if (!data.split) { $('split-msg').textContent = 'Claude found no separate steps in that — node left unchanged.'; return; }
-    treeNodes = splitNode(treeNodes, n.id, data.parts);
-    selectedId = `${n.id}.1`;
-    $('split-input').value = '';
-    $('split-msg').textContent = `Split into ${data.parts.length} steps.`;
-    renderTree(0);
-  } catch (err) {
-    $('split-msg').textContent = 'failed: ' + err.message;
-  } finally {
-    $('split-go').disabled = false;
-  }
-}
-
-$('split-go').addEventListener('click', runSplit);
-$('split-mic').addEventListener('click', async () => {
-  const btn = $('split-mic');
-  btn.disabled = true;
-  $('split-msg').textContent = 'Listening…';
-  try {
-    const blob = await voice.listen();
-    if (!blob) { $('split-msg').textContent = 'Heard nothing.'; return; }
-    $('split-msg').textContent = 'Transcribing…';
-    $('split-input').value = await voice.transcribe(blob);
-    $('split-msg').textContent = 'Check the text, then press Split.';
-  } catch (err) {
-    $('split-msg').textContent = 'failed: ' + err.message;
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-$('download-json').addEventListener('click', () => {
-  const json = toExport({ video: { name: videoName, duration: +video.duration.toFixed(2) }, nodes: treeNodes });
-  const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: `${videoName.replace(/\.[^.]+$/, '')}.action-tree.json` });
-  a.click();
-  URL.revokeObjectURL(url);
-});
 
 // ---- Module 2: Work Map, debrief with follow-ups, teach-back ----
 let mapSteps = [];
@@ -618,6 +347,14 @@ function renderMap() {
     if (!s.guardrails.length) li.append(field('Guardrails', '—'));
     return li;
   });
+  $('map-timeline').replaceChildren(...mapSteps.map((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'ghost';
+    b.textContent = `${i + 1} · ${fmtTime(s.screen_moment.t)}`;
+    b.title = s.title;
+    b.addEventListener('click', () => { items[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' }); seekTo(s.screen_moment.t); });
+    return b;
+  }));
   $('map-steps').replaceChildren(...items);
   renderDebrief();
 }
@@ -657,6 +394,7 @@ $('build-map').addEventListener('click', async () => {
   try {
     followups = [];
     teachBack = null;
+    await describeAll();
     const data = await buildMap();
     const dropped = data.dropped.quotes ? ` · ${data.dropped.quotes} quote(s) dropped: not the expert's words` : '';
     $('status').textContent = `Work Map: ${mapSteps.length} steps${dropped}`;
@@ -757,4 +495,18 @@ $('teach-map').addEventListener('click', () => {
   const json = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
   try { localStorage.setItem('groundzero.workmap', JSON.stringify(json)); } catch { $('status').textContent = 'Could not hand over the Work Map; download it and load it in the tutor.'; return; }
   window.open('tutor.html', '_blank');
+});
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  Object.assign(document.createElement('a'), { href: url, download: name }).click();
+  URL.revokeObjectURL(url);
+}
+
+// Stretch: the Work Map as instructions an agent can load (steps in order, guardrails, where to stop).
+$('download-agent').addEventListener('click', () => {
+  const map = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
+  const base = videoName.replace(/\.[^.]+$/, '');
+  download(`${base}.agent-instructions.json`, JSON.stringify(toAgentInstructions(map), null, 2), 'application/json');
+  download(`${base}.agent-instructions.md`, toAgentMarkdown(map), 'text/markdown');
 });
