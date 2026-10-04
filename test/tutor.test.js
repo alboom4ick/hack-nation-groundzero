@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { explainStep, predictionPrompt, interventionFor, sanitizeCheck, isJudgment, emptyRecord, summarize, summarySpeech, MAX_SPOKEN } from '../public/tutor-logic.js';
+import { stepGuide, explainStep, predictionPrompt, interventionFor, sanitizeCheck, isJudgment, emptyRecord, summarize, summarySpeech, MAX_SPOKEN } from '../public/tutor-logic.js';
 import { checkAction, gradePrediction } from '../lib/tutor.js';
 
 const workMap = JSON.parse(readFileSync(new URL('../public/workmaps/invoice_demo.json', import.meta.url)));
@@ -93,4 +93,12 @@ test('summarize: mastered needs a right prediction or a clean pass; slips go to 
   assert.deepEqual(practice.map((p) => [p.step, p.why]), [['s4', 'went to break a guardrail'], ['s5', 'not tested yet']]);
   assert.match(summarySpeech({ mastered, practice }), /Practice next: Code invoice to cost center/);
   assert.ok(summarySpeech(summarize(workMap, emptyRecord(workMap))).length <= MAX_SPOKEN);
+});
+
+test('stepGuide: do, decide and one watch-out per guardrail, from the expert\'s Work Map only', () => {
+  const g = stepGuide(capex);
+  assert.deepEqual(g.map((l) => l.kind), ['do', 'decide', 'watch', 'watch']);
+  assert.equal(g[0].text, 'Code invoice to cost center');
+  assert.equal(g[2].label, 'Limit');
+  assert.deepEqual(stepGuide(workMap.steps[0]).map((l) => l.kind), ['do']);
 });

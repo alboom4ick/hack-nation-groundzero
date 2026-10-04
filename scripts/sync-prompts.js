@@ -1,8 +1,9 @@
 // Pushes the current interviewer and tutor prompts (public/agent-prompts.js) to the agents already registered by
-// setup-agents.js, touching only the prompt text (tools, voice, knowledge base stay).   Run: node scripts/sync-prompts.js
+// setup-agents.js, touching only the prompt text and the turn timeouts (tools, voice, knowledge base stay).   Run: node scripts/sync-prompts.js
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { TURN } from '../lib/agents.js';
 import { INTERVIEWER_PROMPT, TUTOR_PROMPT_BASE } from '../public/agent-prompts.js';
 
 const envFile = join(fileURLToPath(new URL('..', import.meta.url)), '.env');
@@ -21,7 +22,7 @@ const call = async (id, method, body) => {
 for (const [role, env, prompt] of [['interviewer', 'ELEVENAGENTS_INTERVIEWER_ID', INTERVIEWER_PROMPT], ['tutor', 'ELEVENAGENTS_TUTOR_ID', TUTOR_PROMPT_BASE]]) {
   const id = process.env[env];
   if (!id) { console.log(`${role}: ${env} not set, skipping`); continue; }
-  await call(id, 'PATCH', { conversation_config: { agent: { prompt: { prompt } } } });
+  await call(id, 'PATCH', { conversation_config: { agent: { prompt: { prompt } }, turn: TURN } });
   const live = (await call(id, 'GET')).conversation_config?.agent?.prompt?.prompt;
   console.log(`${role}: ${live === prompt ? 'in sync' : 'MISMATCH after patch'} (${id})`);
 }

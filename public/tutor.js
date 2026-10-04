@@ -9,10 +9,12 @@ import { tutorPrompt, tutorCue } from './agent-prompts.js';
 import { readWorkMap } from './workmap.js';
 import { answerSaves } from './save-hold.js';
 import { ocrEnabled, setOcrEnabled } from './ocr-redact.js';
-import { explainStep, predictionPrompt, isJudgment, createLesson, summarySpeech, mmss, CHECK_SPEECH } from './tutor-logic.js';
+import { openIsland, closeIsland, dismissIsland } from './island.js';
+import { stepGuide, explainStep, predictionPrompt, isJudgment, createLesson, summarySpeech, mmss, CHECK_SPEECH } from './tutor-logic.js';
 
 const T = { checkGapSec: 4 }; // seconds between screen checks; when the new hire has paused is the screen watch's call
-const $ = (id) => document.getElementById(id);
+// The voice panel lives in the floating island, so lookups go through whichever document holds it.
+const $ = voice.byId;
 let EXPERT = 'the expert'; // the Work Map may name the expert (process.expert); the expert's words stay anonymous otherwise
 const expertOf = (m) => m.process?.expert || 'the expert';
 
@@ -41,6 +43,26 @@ function renderSteps() {
     li.append(el('h4', '', `${i + 1}. ${s.title}`));
     if (s.decision) li.append(el('div', 'meta', `Decision: ${s.decision}`));
     if (isJudgment(s)) li.append(el('div', 'meta', `${s.guardrails.length} guardrail${s.guardrails.length === 1 ? '' : 's'}`));
+    return li;
+  }));
+  renderGuide();
+}
+
+// The island's checklist: where the new hire is in the Work Map and what to do on this step.
+function renderGuide() {
+  const g = $('guide');
+  if (!g || !workMap) return;
+  const n = workMap.steps.length, i = lesson.current;
+  const step = lesson.step;
+  $('guide-count').textContent = step ? `Step ${i + 1} of ${n}` : `${n} steps`;
+  $('guide-dots').replaceChildren(...workMap.steps.map((s, k) => {
+    const r = lesson.record[s.id];
+    return el('span', `gdot${k === i ? ' now' : ''}${k < i || r.touched ? ' done' : ''}${r.violations ? ' wrong' : ''}`);
+  }));
+  $('guide-title').textContent = step ? step.title : 'Press Start practising to begin';
+  $('guide-list').replaceChildren(...(step ? stepGuide(step) : []).map((l) => {
+    const li = el('li', `g-${l.kind}`);
+    li.append(el('b', '', l.label), ' ' + l.text);
     return li;
   }));
 }
@@ -90,11 +112,13 @@ let session = null;
 async function start() {
   if (session || !workMap) return;
   const shareP = navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+  const islandP = openIsland({ width: 400, height: 330 }); // needs the click's activation too, so start it with the share prompt
   let display;
-  try { display = await shareP; } catch (err) { $('load-msg').textContent = 'Screen sharing was cancelled: ' + err.message; return; }
+  try { display = await shareP; } catch (err) { closeIsland(); $('load-msg').textContent = 'Screen sharing was cancelled: ' + err.message; return; }
+  await islandP;
   // The tutor watches the new hire's screen the same way the apprentice watched the expert's.
   let watch;
-  try { watch = await openScreenWatch({ display }); } catch (err) { $('load-msg').textContent = err.message; return; }
+  try { watch = await openScreenWatch({ display }); } catch (err) { closeIsland(); $('load-msg').textContent = err.message; return; }
 
   const s = session = { t0: performance.now(), busy: true, ended: false, lastCheck: -Infinity, changed: false, frames: [], said: '', checking: false };
   const now = () => (performance.now() - s.t0) / 1000;
@@ -144,7 +168,8 @@ async function start() {
     }
   }
 
-  $('voice').hidden = false;
+  lesson.goTo(0);
+  renderSteps();
   $('start').disabled = true;
   $('summary').hidden = true;
   $('alert').hidden = true;
@@ -256,7 +281,8 @@ async function start() {
     $('summary').hidden = false;
     renderSteps();
     $('start').disabled = false;
-    $('voice-end').textContent = 'Finish';
+    $('voice-end').textContent = 'Close';
+    $('voice-end').onclick = dismissIsland;
     voice.setState('idle');
     session = null;
     s.busy = true;

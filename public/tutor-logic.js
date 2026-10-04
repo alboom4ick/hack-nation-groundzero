@@ -20,6 +20,16 @@ export function explainStep(step, expertName = 'the expert') {
   return clip(parts.join(' '));
 }
 
+// What the island shows the new hire for one step: do this, decide that, watch out for these. Built from the Work
+// Map only (the expert's decision and guardrails), so it never says more than the expert did.
+const GUARD_LABEL = { limit: 'Limit', exception: 'Exception', stop_and_ask: 'Stop and ask' };
+export function stepGuide(step) {
+  const lines = [{ kind: 'do', label: 'Do', text: stripEnd(step.title) }];
+  if (step.decision) lines.push({ kind: 'decide', label: 'Decide', text: stripEnd(step.decision) });
+  for (const g of step.guardrails) lines.push({ kind: 'watch', label: GUARD_LABEL[g.kind] ?? 'Watch', text: stripEnd(g.rule) });
+  return lines;
+}
+
 // A step is worth a prediction question only if it carries a judgment call.
 export const isJudgment = (step) => !!step.decision || step.guardrails.length > 0;
 

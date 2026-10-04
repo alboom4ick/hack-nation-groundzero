@@ -7,6 +7,7 @@ import { getLanguage } from './language.js';
 import { redact } from './redact.js';
 import { screenContext } from './asker.js';
 import { createPacer } from './pacing.js';
+import { openIsland, closeIsland, dismissIsland } from './island.js';
 
 // When the expert has paused is the screen watch's call (screen-watch.js); what to ask and how often is the
 // pacer's (pacing.js). These only shape the segments sent to the vision model.
@@ -17,44 +18,7 @@ const T = {
 
 export { redact };
 
-// ---------- Picture-in-Picture island ----------
-let pip = null;
-
-let opening = null; // in-flight open, so overlapping calls share one window
-
-export function openIsland() {
-  voice.byId('voice').hidden = false;
-  if (pip) return Promise.resolve();
-  return (opening ??= openWindow().finally(() => { opening = null; }));
-}
-
-async function openWindow() {
-  const el = voice.byId('voice');
-  el.classList.add('island-float'); // fallback: pinned bottom-right of the page
-  if (!('documentPictureInPicture' in window)) return;
-  try {
-    pip = await documentPictureInPicture.requestWindow({ width: 380, height: 170 });
-  } catch { return; } // no user gesture / unsupported
-  el.classList.replace('island-float', 'island');
-  for (const sheet of document.styleSheets) {
-    const style = pip.document.createElement('style');
-    try { style.textContent = [...sheet.cssRules].map((r) => r.cssText).join('\n'); } catch { continue; }
-    pip.document.head.append(style);
-  }
-  pip.document.body.style.margin = '0';
-  pip.document.documentElement.dataset.theme = document.documentElement.dataset.theme ?? '';
-  pip.document.body.append(el);
-  voice.setDoc(pip.document);
-  pip.addEventListener('pagehide', () => {
-    document.body.append(el);
-    el.classList.replace('island', 'island-float');
-    voice.setDoc(document);
-    pip = null;
-  }, { once: true });
-}
-
-export const closeIsland = () => pip?.close();
-export const dismissIsland = () => { voice.byId('voice').hidden = true; closeIsland(); };
+export { openIsland, closeIsland, dismissIsland };
 
 // ---------- Live session ----------
 let session = null;
