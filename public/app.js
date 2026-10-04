@@ -1,14 +1,17 @@
 import { segment } from './segmenter.js';
 import * as voice from './voice.js';
+import { startLive, openIsland, fixDuration } from './live.js';
 import { depths, toExport, splitNode } from './tree.js';
 import { toBpmn, layoutNodes } from './bpmn.js';
+import { toWorkMap, debriefStatus, ensureGuardrailQuestion } from './workmap.js';
 
 const SAMPLE_FPS = 4;      // motion sampling rate
 const PROBE = { w: 64, h: 36 };
 const THUMB_W = 640;
 const PAGE_SIZE = 5;
 
-const $ = (id) => document.getElementById(id);
+// The voice panel may be floating in a Picture-in-Picture window; byId finds it wherever it is.
+const $ = voice.byId;
 
 // Parses a JSON reply; a plain-text error (e.g. a stale server's 404) becomes a readable message.
 async function readJson(res) {
@@ -23,24 +26,45 @@ let videoName = 'video';
 let treeNodes = [];
 let selectedId = null;
 
-$('file').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  videoName = f.name;
+function resetSession(name) {
+  videoName = name;
   treeNodes = [];
   selectedId = null;
   $('tree').hidden = true;
-  video.src = URL.createObjectURL(f);
-  video.hidden = false;
+  $('workmap').hidden = true;
+  mapSteps = []; mapUnclear = []; followups = []; teachBack = null;
   segments = [];
   $('segments').replaceChildren();
   $('pager').hidden = true;
   $('tools').hidden = true;
+}
+
+$('file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  resetSession(f.name);
+  video.src = URL.createObjectURL(f);
+  video.hidden = false;
   $('status').textContent = 'loading…';
   video.onloadedmetadata = () => {
     $('run').disabled = false;
     $('status').textContent = `${video.duration.toFixed(1)} s`;
   };
+});
+
+// Live capture: the segments were cut and described while the expert worked.
+$('live-start').addEventListener('click', startLive);
+$('voice-start').addEventListener('click', () => openIsland());
+$('debrief-start').addEventListener('click', () => openIsland());
+window.addEventListener('live:done', async ({ detail }) => {
+  resetSession(`live-${new Date().toISOString().slice(0, 16).replace(':', '-')}.webm`);
+  video.src = URL.createObjectURL(detail.blob);
+  video.hidden = false;
+  await fixDuration(video);
+  segments = detail.segments;
+  page = 0;
+  render();
+  $('status').textContent = `${segments.length} live segments · ${video.duration.toFixed(1)} s`;
 });
 
 $('run').addEventListener('click', async () => {
@@ -306,6 +330,7 @@ async function moveTo(t, follow) {
 }
 
 async function startVoice() {
+  ensureGuardrailQuestion(segments);
   const queue = buildQueue();
   if (!queue.length) { $('status').textContent = 'Describe the segments first — no open questions.'; return; }
   run = { cancelled: false, skip: false };
@@ -335,6 +360,7 @@ async function startVoice() {
 
       voice.setState('thinking');
       item.q.answer = await voice.transcribe(blob);
+      item.q.answerT = item.time;
       $('voice-a').textContent = item.q.answer;
       showQuestion(item);
     }
@@ -364,7 +390,7 @@ function nodeInputs() {
     id: `n${s.id + 1}`,
     description: s.result.description,
     slots: s.result.slots,
-    answers: s.result.questions.filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer })),
+    answers: s.result.questions.filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer, ...(Number.isFinite(q.answerT) ? { t: +q.answerT.toFixed(2) } : {}) })),
     video_segment: { uri: videoName, t_start: +s.tStart.toFixed(2), t_end: +s.tEnd.toFixed(2) },
   }));
 }
@@ -543,4 +569,192 @@ $('download-json').addEventListener('click', () => {
   const a = Object.assign(document.createElement('a'), { href: url, download: `${videoName.replace(/\.[^.]+$/, '')}.action-tree.json` });
   a.click();
   URL.revokeObjectURL(url);
+});
+
+// ---- Module 2: Work Map, debrief with follow-ups, teach-back ----
+let mapSteps = [];
+let mapUnclear = [];
+let followups = [];   // [{ step, question, answer }] asked in the debrief
+let teachBack = null; // { text, confirmed, correction }
+
+const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const seekTo = (t) => { video.pause(); video.currentTime = t; video.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+
+function momentLink(t, label = 'screen moment') {
+  const b = document.createElement('button');
+  b.className = 'link';
+  b.textContent = `▶ ${fmtTime(t)} ${label}`;
+  b.addEventListener('click', () => seekTo(t));
+  return b;
+}
+
+function field(label, ...children) {
+  const d = document.createElement('div');
+  d.className = 'field';
+  const b = document.createElement('b');
+  b.textContent = label;
+  d.append(b, ...children);
+  return d;
+}
+
+const quoteEl = (words) => Object.assign(document.createElement('span'), { className: 'quote', textContent: `“${words}” ` });
+const GUARD_LABEL = { limit: 'Limit', exception: 'Exception', stop_and_ask: 'Stop and ask' };
+
+function renderMap() {
+  $('workmap').hidden = false;
+  const items = mapSteps.map((s, i) => {
+    const li = document.createElement('li');
+    li.className = 'mstep';
+    const h = document.createElement('h4');
+    h.textContent = `Step ${i + 1} of ${mapSteps.length}: ${s.title} `;
+    h.append(momentLink(s.screen_moment.t, 'screen moment'));
+    li.append(h);
+    li.append(field('Decision', s.decision ?? '—'));
+    if (s.reason) li.append(field('Reason', quoteEl(s.reason.words), s.reason.source === 'live' ? momentLink(s.reason.screen_moment.t, 'said here') : Object.assign(document.createElement('span'), { className: 'hint', textContent: '(debrief)' })));
+    else if (s.needs_reason) li.append(Object.assign(field('Reason', 'not stated yet, asked in debrief'), { className: 'field gap' }));
+    for (const g of s.guardrails) {
+      li.append(field(GUARD_LABEL[g.kind], `${g.rule} `, quoteEl(g.words), g.source === 'live' ? momentLink(g.screen_moment.t, 'said here') : Object.assign(document.createElement('span'), { className: 'hint', textContent: '(debrief)' })));
+    }
+    if (!s.guardrails.length) li.append(field('Guardrails', '—'));
+    return li;
+  });
+  $('map-steps').replaceChildren(...items);
+  renderDebrief();
+}
+
+function renderDebrief() {
+  const st = debriefStatus({ followups, teachBack });
+  const open = mapUnclear.filter((u) => !followups.some((f) => f.question === u.question && f.answer));
+  $('debrief-open').textContent = open.length ? `Still unclear (${open.length}): ${open.map((u) => u.question).join(' · ')}` : 'Nothing left to ask.';
+  $('debrief-status').textContent = st.complete
+    ? 'Debrief complete: teach-back confirmed.'
+    : `${st.followups_answered}/3 follow-ups answered · teach-back ${st.confirmed ? 'confirmed' : 'not confirmed'}`;
+  $('teachback').textContent = teachBack ? `Teach-back: ${teachBack.text}${teachBack.correction ? ` — Expert: ${teachBack.correction}` : ''}` : '';
+}
+
+async function post(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await readJson(res);
+  if (!res.ok) throw new Error(data.error ?? res.statusText);
+  return data;
+}
+
+async function buildMap() {
+  const inputs = nodeInputs();
+  if (!inputs.length) throw new Error('Describe the segments first.');
+  const data = await post('/api/workmap', { nodes: inputs, debrief: followups.filter((f) => f.answer) });
+  mapSteps = data.steps;
+  // Questions the expert already answered in the debrief are not asked again.
+  mapUnclear = data.unclear.filter((u) => !followups.some((f) => f.question === u.question));
+  renderMap();
+  return data;
+}
+
+$('build-map').addEventListener('click', async () => {
+  const btn = $('build-map');
+  btn.disabled = true;
+  $('status').textContent = 'building Work Map…';
+  try {
+    followups = [];
+    teachBack = null;
+    const data = await buildMap();
+    const dropped = data.dropped.quotes ? ` · ${data.dropped.quotes} quote(s) dropped: not the expert's words` : '';
+    $('status').textContent = `Work Map: ${mapSteps.length} steps${dropped}`;
+  } catch (err) {
+    $('status').textContent = 'failed: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+const sentences = (text, max = 450) => {
+  const out = [];
+  for (const s of text.match(/[^.!?]+[.!?]*\s*/g) ?? [text]) {
+    if (out.length && (out.at(-1) + s).length <= max) out[out.length - 1] += s;
+    else out.push(s);
+  }
+  return out.map((s) => s.trim()).filter(Boolean);
+};
+
+async function ask(text) {
+  $('voice-q').textContent = text;
+  $('voice-a').textContent = '';
+  voice.setState('speaking');
+  for (const part of sentences(text)) { await voice.speak(part); if (run.cancelled || run.skip) return null; }
+  voice.setState('listening');
+  const blob = await voice.listen();
+  if (run.cancelled || !blob) return null;
+  voice.setState('thinking');
+  const answer = await voice.transcribe(blob);
+  $('voice-a').textContent = answer;
+  return answer;
+}
+
+// Debrief: ask what is still unclear, rebuild the map with the answers, then explain the process back
+// until the expert confirms (at most two corrections).
+async function runDebrief() {
+  const queue = mapUnclear.filter((u) => !followups.some((f) => f.question === u.question));
+  run = { cancelled: false, skip: false };
+  $('voice').hidden = false;
+  $('voice-total').textContent = queue.length;
+  $('voice-n').textContent = 0;
+  try {
+    for (const [i, u] of queue.entries()) {
+      if (run.cancelled) break;
+      run.skip = false;
+      $('voice-n').textContent = i + 1;
+      const answer = await ask(u.question);
+      followups.push({ step: u.step, question: u.question, answer });
+      renderDebrief();
+    }
+    if (run.cancelled) return;
+
+    $('voice-total').textContent = '…';
+    $('status').textContent = 'updating Work Map…';
+    await buildMap();
+
+    for (let round = 0; round < 3 && !run.cancelled; round++) {
+      const { text } = await post('/api/teachback', { steps: mapSteps });
+      teachBack = { text, confirmed: false, correction: null };
+      renderDebrief();
+      run.skip = false;
+      const reply = await ask(text);
+      if (!reply) break;
+      const verdict = await post('/api/teachback/judge', { explanation: text, reply });
+      teachBack = { text, ...verdict };
+      renderDebrief();
+      if (verdict.confirmed) break;
+      followups.push({ step: null, question: `Correction to teach-back: ${text}`, answer: verdict.correction ?? reply });
+      await buildMap();
+    }
+  } catch (err) {
+    $('voice-a').textContent = 'error: ' + err.message;
+  } finally {
+    voice.setState('idle');
+    run = null;
+    renderDebrief();
+    $('voice-q').textContent = teachBack?.confirmed ? 'Teach-back confirmed.' : 'Debrief stopped.';
+    $('status').textContent = '';
+  }
+}
+
+$('debrief-start').addEventListener('click', async () => {
+  const btn = $('debrief-start');
+  btn.disabled = true;
+  try { await runDebrief(); } finally { btn.disabled = false; }
+});
+
+$('download-map').addEventListener('click', () => {
+  const json = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
+  const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${videoName.replace(/\.[^.]+$/, '')}.work-map.json` });
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// Hand the Work Map to the Module-3 tutor (same browser, so localStorage carries it).
+$('teach-map').addEventListener('click', () => {
+  const json = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
+  try { localStorage.setItem('groundzero.workmap', JSON.stringify(json)); } catch { $('status').textContent = 'Could not hand over the Work Map; download it and load it in the tutor.'; return; }
+  window.open('tutor.html', '_blank');
 });

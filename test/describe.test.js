@@ -80,3 +80,13 @@ test('branch_question becomes a tagged question and does not suppress slot fallb
   assert.equal(r.questions[1].frame, 1);
   assert.equal(finalize(parseDescription(reply({ description: 'd', slots: {}, questions: [], branch_question: null }))).questions.every((q) => q.kind !== 'branch'), true);
 });
+
+test('guardrail_question becomes a question tagged kind=guardrail and does not count as a slot question', () => {
+  const out = finalize(parseDescription(JSON.stringify({
+    description: 'd', slots: {}, questions: [],
+    guardrail_question: { frame: 1, text: " Is there an amount where you'd stop? " },
+  }), 2));
+  const g = out.questions.find((q) => q.kind === 'guardrail');
+  assert.deepEqual(g, { frame: 1, text: "Is there an amount where you'd stop?", kind: 'guardrail' });
+  assert.ok(out.questions.some((q) => !q.kind), 'generic slot questions are still added');
+});

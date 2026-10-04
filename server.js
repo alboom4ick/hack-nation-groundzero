@@ -8,12 +8,14 @@ import { speak } from './lib/tts.js';
 import { transcribe } from './lib/stt.js';
 import { proposeLineage } from './lib/lineage.js';
 import { proposeSplit } from './lib/split.js';
+import { checkAction, gradePrediction } from './lib/tutor.js';
+import { proposeWorkMap, explainWorkMap, judgeTeachBack } from './lib/workmap.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 if (existsSync(join(here, '.env'))) process.loadEnvFile(join(here, '.env'));
 
 const root = join(here, 'public');
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.woff2': 'font/woff2' };
 const MAX_BODY = 20 * 1024 * 1024;
 
 async function readRaw(req) {
@@ -57,6 +59,37 @@ const routes = {
     const { node, instruction } = await readJson(req);
     if (!node?.id || typeof instruction !== 'string' || !instruction.trim()) throw Object.assign(new Error('node and instruction required'), { status: 400 });
     const out = await proposeSplit({ node, instruction: instruction.slice(0, 2000) }, need('ANTHROPIC_API_KEY'));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+  },
+  'POST /api/workmap': async (req, res) => {
+    const { nodes, debrief } = await readJson(req);
+    if (!Array.isArray(nodes) || !nodes.length) throw Object.assign(new Error('nodes required'), { status: 400 });
+    const out = await proposeWorkMap({ nodes, debrief: Array.isArray(debrief) ? debrief : [] }, need('ANTHROPIC_API_KEY'));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+  },
+  'POST /api/teachback': async (req, res) => {
+    const { steps } = await readJson(req);
+    if (!Array.isArray(steps) || !steps.length) throw Object.assign(new Error('steps required'), { status: 400 });
+    const out = await explainWorkMap({ steps }, need('ANTHROPIC_API_KEY'));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+  },
+  'POST /api/teachback/judge': async (req, res) => {
+    const { explanation, reply } = await readJson(req);
+    if (typeof explanation !== 'string' || typeof reply !== 'string' || !reply.trim()) throw Object.assign(new Error('explanation and reply required'), { status: 400 });
+    const out = await judgeTeachBack({ explanation: explanation.slice(0, 2000), reply: reply.slice(0, 2000) }, need('ANTHROPIC_API_KEY'));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+  },
+  'POST /api/tutor/check': async (req, res) => {
+    const { workMap, frames, said } = await readJson(req);
+    if (!Array.isArray(workMap?.steps) || !workMap.steps.length) throw Object.assign(new Error('workMap required'), { status: 400 });
+    if (!Array.isArray(frames) || !frames.length) throw Object.assign(new Error('frames required'), { status: 400 });
+    const out = await checkAction({ workMap, frames, said: typeof said === 'string' ? said : '' }, need('ANTHROPIC_API_KEY'));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+  },
+  'POST /api/tutor/predict': async (req, res) => {
+    const { step, answer } = await readJson(req);
+    if (!step?.title || !Array.isArray(step.guardrails) || typeof answer !== 'string' || !answer.trim()) throw Object.assign(new Error('step and answer required'), { status: 400 });
+    const out = await gradePrediction({ step, answer: answer.slice(0, 1000) }, need('ANTHROPIC_API_KEY'));
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
   },
   'POST /api/tts': async (req, res) => {

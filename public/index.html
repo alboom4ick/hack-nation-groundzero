@@ -4,22 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GroundZero</title>
+<link rel="stylesheet" href="theme.css">
 <style>
-  :root { --bg:#fafaf9; --fg:#1c1917; --muted:#78716c; --card:#fff; --line:#e7e5e4; --accent:#2563eb; }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --bg:#0c0a09; --fg:#f5f5f4; --muted:#a8a29e; --card:#1c1917; --line:#292524; --accent:#60a5fa; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
-  main { max-width:960px; margin:0 auto; padding:24px 16px 64px; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  p.sub { color:var(--muted); margin:0 0 20px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
-  video { width:100%; max-height:420px; background:#000; border-radius:8px; }
   input[type=file] { width:100%; }
-  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
-  button:disabled { opacity:.5; cursor:default; }
-  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
   progress { flex:1; min-width:120px; }
   .seg { cursor:pointer; }
   .seg:hover { border-color:var(--accent); }
@@ -27,35 +14,58 @@
   .seg .meta { color:var(--muted); font-weight:400; }
   .strip { display:flex; gap:6px; overflow-x:auto; }
   .strip img { height:72px; border-radius:4px; flex:none; }
-  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
   .out { margin-top:10px; }
   .out p { margin:0 0 8px; }
   dl { display:grid; grid-template-columns:110px 1fr; gap:2px 12px; margin:0 0 8px; font-size:13px; }
   dt { color:var(--muted); } dd { margin:0; } dd.missing { color:var(--muted); font-style:italic; }
   .seg { cursor:default; } .seg:hover { border-color:var(--line); }
-  summary { cursor:pointer; color:var(--muted); font-size:13px; margin-bottom:4px; }
   .q { border-top:1px solid var(--line); padding:6px 0; }
   .q.current { background:color-mix(in srgb, var(--accent) 10%, transparent); border-radius:6px; padding:6px; }
   .answer { color:var(--muted); font-size:13px; padding-top:2px; }
   #tools { margin-bottom:12px; }
   #voice { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); width:min(560px, calc(100% - 32px)); background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; box-shadow:0 8px 30px rgba(0,0,0,.18); display:flex; gap:14px; align-items:center; z-index:10; }
   #voice[hidden] { display:none; }
-  #orb { --level:0; flex:none; width:56px; height:56px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #93c5fd, var(--accent)); transform:scale(calc(1 + var(--level) * .6)); transition:transform .08s linear, background .3s; }
   #voice[data-state="listening"] #orb { background:radial-gradient(circle at 35% 30%, #86efac, #16a34a); }
   #voice[data-state="thinking"] #orb { animation:pulse 1s ease-in-out infinite; background:radial-gradient(circle at 35% 30%, #fcd34d, #d97706); }
   @keyframes pulse { 50% { transform:scale(1.15); } }
   @media (prefers-reduced-motion: reduce) { #orb { transition:none; animation:none !important; } }
   #voice .body { flex:1; min-width:0; }
-  #voice-q { font-weight:600; } #voice-a { color:var(--muted); font-size:13px; min-height:1.2em; }
-  .hint { color:var(--muted); font-size:13px; }
+  /* Floating island: the voice panel inside the Picture-in-Picture window (or pinned on the page as a fallback). */
+  #voice.island { position:static; transform:none; width:auto; min-height:100vh; border:0; border-radius:0; box-shadow:none; padding:12px 14px; gap:12px; }
+  #voice.island-float { left:auto; right:16px; transform:none; width:360px; border-radius:22px; padding:12px 14px; gap:12px; }
+  #voice.island #orb, #voice.island-float #orb { width:44px; height:44px; }
+  #voice.island #voice-q, #voice.island-float #voice-q { font-size:14px; line-height:1.3; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  #voice.island .col button, #voice.island-float .col button { padding:5px 10px; font-size:12px; white-space:nowrap; }
+  #voice[data-live] .qof { display:none; }
+  #voice[data-state="watching"] #orb { animation:breathe 3.2s ease-in-out infinite; background:radial-gradient(circle at 35% 30%, #99f6e4, #0d9488); }
+  #voice[data-state="private"] #orb { background:radial-gradient(circle at 35% 30%, #d6d3d1, #57534e); }
+  #voice[data-state="speaking"][data-live] #orb, #voice[data-state="listening"][data-live] #orb { animation:none; }
+  #island-rec[aria-pressed="true"] { background:#57534e; color:#fff; border-color:#57534e; }
+  @keyframes breathe { 50% { transform:scale(1.08); } }
+  .mstep h4 { margin:0 0 4px; font-size:14px; }
+  .mstep .field { font-size:13px; margin:2px 0; }
+  .mstep .field b { color:var(--muted); font-weight:600; display:inline-block; min-width:78px; }
+  .mstep .quote { font-style:italic; }
+  .mstep .gap { color:#d97706; }
+  #orb { --level:0; flex:none; width:56px; height:56px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #8fd1c7, var(--accent)); transform:scale(calc(1 + var(--level) * .6)); transition:transform .08s linear, background .3s; }
 </style>
 </head>
 <body>
+<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><span class="hint">Capture</span><span class="pill">Private workspace</span></div></header>
 <main>
+  <p class="eyebrow">Capture</p>
   <h1>GroundZero</h1>
   <p class="sub">Upload an expert video. It is cut into 2–4 s action segments for description and questioning.</p>
 
+  <div id="live-card" class="card">
+    <div class="row">
+      <button id="live-start">● Share screen &amp; start apprenticeship</button>
+      <span id="live-status" class="hint">Do a real task while talking. The apprentice watches, stays quiet while you type or speak, and asks <em>why</em> at natural pauses in a floating window.</span>
+    </div>
+  </div>
+
   <div class="card">
+    <div class="hint" style="margin-bottom:6px">…or upload a recorded session instead</div>
     <input id="file" type="file" accept="video/*">
     <video id="video" controls playsinline hidden></video>
     <div class="row" style="margin-top:12px">
@@ -69,6 +79,16 @@
     <button id="describe-all">Describe all segments</button>
     <button id="voice-start">🎙 Start voice Q&amp;A</button>
     <button id="build-tree">Build action tree</button>
+    <button id="build-map">Build Work Map</button>
+  </div>
+  <div id="workmap" class="card" hidden>
+    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Work Map</h3><span class="row"><button id="teach-map">Teach a new hire →</button><button id="download-map" class="ghost">Download JSON</button></span></div>
+    <ol id="map-steps" style="list-style:none;margin:12px 0;padding:0"></ol>
+    <div id="debrief" style="border-top:1px solid var(--line);padding-top:12px">
+      <div class="row"><button id="debrief-start">🎙 Run debrief</button><span id="debrief-status" class="hint"></span></div>
+      <div id="debrief-open" class="hint" style="margin-top:6px"></div>
+      <p id="teachback" style="margin:8px 0 0"></p>
+    </div>
   </div>
   <div id="tree" class="card" hidden>
     <div class="row" style="justify-content:space-between"><h3 style="margin:0">Action tree</h3><button id="download-json" class="ghost">Download JSON</button></div>
@@ -95,11 +115,13 @@
 <div id="voice" data-state="idle" hidden role="status" aria-live="polite">
   <div id="orb" aria-hidden="true"></div>
   <div class="body">
-    <div class="hint"><span id="voice-label">Ready</span> · question <span id="voice-n">0</span> of <span id="voice-total">0</span></div>
+    <div class="hint"><span id="voice-label">Ready</span><span class="qn"> · question <span id="voice-n">0</span><span class="qof"> of <span id="voice-total">0</span></span></span></div>
+    <div id="island-status" class="hint" hidden></div>
     <div id="voice-q"></div>
     <div id="voice-a"></div>
   </div>
   <div class="col" style="display:flex;flex-direction:column;gap:6px">
+    <button id="island-rec" class="ghost" hidden title="Pause capture and questions; nothing is recorded">Off the record</button>
     <button id="voice-skip" class="ghost">Skip</button>
     <button id="voice-end" class="ghost">End</button>
   </div>

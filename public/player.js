@@ -1,4 +1,6 @@
 import { loadWorkflow, createPlayer } from './runtime.js';
+import { locate, canDetect, warmUp } from './detect.js';
+import { createNarrator } from './narrator.js';
 
 // The only deployment-specific constant: which workflow JSON to load.
 // Override with ?w=<name> to load /workflows/<name>.json (no code change needed for new workflows).
@@ -50,6 +52,21 @@ async function startCamera() {
   }
 }
 
+// ---- voice --------------------------------------------------------------
+const voiceBtn = $('voice-btn');
+const narrator = createNarrator({
+  onChange() {
+    voiceBtn.textContent = narrator.muted ? '🔇' : '🔊';
+    voiceBtn.classList.toggle('speaking', narrator.speaking);
+    voiceBtn.classList.toggle('blocked', narrator.blocked);
+    voiceBtn.setAttribute('aria-label', narrator.muted ? 'Unmute voice' : 'Mute voice');
+  },
+});
+voiceBtn.addEventListener('click', (ev) => { ev.stopPropagation(); narrator.toggleMute(); });
+$('replay-btn').addEventListener('click', (ev) => { ev.stopPropagation(); narrator.replay(); });
+// Browsers block audio until the first gesture; the first tap releases any held narration.
+document.addEventListener('pointerdown', () => narrator.unlock(), { capture: true });
+
 // ---- rendering ----------------------------------------------------------
 let player;
 
@@ -100,6 +117,8 @@ function drawLine(a, b) {
 
 function render() {
   const { state } = player;
+  const cur = player.getNode(state.currentNodeId);
+  narrator.update({ state, node: cur, stage: cur?.bpmn_type === 'userTask' ? player.groundingStage(cur.id) : null });
   overlay.replaceChildren();
   lines.replaceChildren();
   actions.replaceChildren();
@@ -141,7 +160,7 @@ function renderTask(node) {
     const label = (isSource ? ar.anchor : ar.target_anchor).label;
     overlay.append(h('div', { class: 'card center' },
       h('div', { class: 'title' }, node.name ?? ''),
-      h('div', { class: 'instr' }, isSource ? `Tap the ${label} to locate it` : `Now tap the ${label} (target)`),
+      h('div', { class: 'instr' }, (isSource ? `Point camera at the ${label}` : `Now find the ${label} (target)`) + (canDetect(isSource ? ar.anchor : ar.target_anchor) ? ' — or tap it' : ' and tap it')),
       !isSource ? h('div', { class: 'desc' }, instruction) : null));
     if (a.source) overlay.append(marker(a.source, { region: ar.anchor.type === 'region', label: 'A' }));
     actions.append(button('Skip', '', () => player.skipTask()));
@@ -167,12 +186,46 @@ function renderTask(node) {
     const anchorPoint = a.target ? { x: (a.source.x + a.target.x) / 2, y: Math.min(a.source.y, a.target.y) } : a.source;
     if (!a.target) overlay.append(arrowAt(a.source, { up: a.source.y < 0.4 }));
     cardAt(anchorPoint, ...body);
-    overlay.append(h('button', { class: 'link', type: 'button', onclick: () => player.clearAnchors(node.id) }, 'Re-locate'));
+    overlay.append(h('button', { class: 'link', type: 'button', onclick: () => { for (const k of ['source', 'target']) auto.delete(`${node.id}:${k}`); player.clearAnchors(node.id); } }, 'Re-locate'));
   } else {
     overlay.append(h('div', { class: 'card center' }, ...body));
   }
   actions.append(button('Skip', '', () => player.skipTask()), button('Done', 'primary', () => player.completeTask()));
 }
+
+// ---- auto-grounding (open-source COCO-SSD; tap stays as fallback) ---------
+// While a task waits for an anchor, detect the labelled object and place it automatically.
+// Once placed, keep tracking it so the marker follows the object. Moving it by hand (tap) disables tracking.
+const auto = new Set(); // `${nodeId}:${stage}` anchors placed by the detector
+let busy = false;
+
+async function detectTick() {
+  if (busy || !player || !cam.videoWidth) return;
+  const { state } = player;
+  const node = player.getNode(state.currentNodeId);
+  if (state.status === 'complete' || node?.bpmn_type !== 'userTask' || !node.ar?.anchor) return;
+  busy = true;
+  try {
+    const stage = player.groundingStage(node.id);
+    const a = state.anchors[node.id] ?? {};
+    const todo = stage === 'ready'
+      ? ['source', 'target'].filter((k) => a[k] && auto.has(`${node.id}:${k}`))
+      : [stage];
+    let dirty = false;
+    for (const k of todo) {
+      const anchor = k === 'source' ? node.ar.anchor : node.ar.target_anchor;
+      if (!canDetect(anchor)) continue;
+      const p = await locate(cam, anchor);
+      if (!p) continue;
+      if (a[k]) { a[k].x = p.x; a[k].y = p.y; dirty = true; }
+      else { auto.add(`${node.id}:${k}`); player.setAnchorPoint(p, node.id); }
+    }
+    if (dirty) render();
+  } catch (err) {
+    console.warn('detect', err);
+  } finally { busy = false; }
+}
+setInterval(detectTick, 500);
 
 // ---- input --------------------------------------------------------------
 stage.addEventListener('click', (ev) => {
@@ -180,12 +233,13 @@ stage.addEventListener('click', (ev) => {
   if (node?.bpmn_type !== 'userTask') return;
   player.setAnchorPoint({ x: ev.clientX / window.innerWidth, y: ev.clientY / window.innerHeight });
 });
-$('restart-top').addEventListener('click', () => player.resetWorkflow());
+$('restart-top').addEventListener('click', () => { narrator.stop(); player.resetWorkflow(); });
 window.addEventListener('resize', () => player && render());
 
 // ---- boot ---------------------------------------------------------------
 (async () => {
   startCamera();
+  warmUp();
   try {
     const workflow = await loadWorkflow(WORKFLOW_URL);
     $('process-name').textContent = workflow.process?.name ?? workflowName;

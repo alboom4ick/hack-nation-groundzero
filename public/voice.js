@@ -1,8 +1,12 @@
 // Speech-to-speech loop pieces: speak (ElevenLabs TTS), listen (mic + silence detection),
 // transcribe (ElevenLabs STT). Each drives the orb's --level so it pulses with the audio.
 
-const LABELS = { idle: 'Ready', speaking: 'Claude is asking…', listening: 'Listening…', thinking: 'Transcribing…' };
-const $ = (id) => document.getElementById(id);
+const LABELS = { idle: 'Ready', speaking: 'Claude is asking…', listening: 'Listening…', thinking: 'Transcribing…', watching: 'Watching quietly…', private: 'Off the record' };
+// The voice panel can live in a Picture-in-Picture window, so lookups go through whichever document holds it.
+let doc = document;
+export const setDoc = (d) => { doc = d; };
+export const byId = (id) => doc.getElementById(id) ?? document.getElementById(id);
+const $ = byId;
 let ctx;
 let stopCurrent = null;
 

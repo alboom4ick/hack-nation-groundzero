@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GroundZero Tutor</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+  ol.steps { list-style:none; margin:0; padding:0; }
+  #voice { display:flex; gap:14px; align-items:center; position:sticky; top:8px; z-index:5; box-shadow:0 8px 30px rgba(0,0,0,.12); }
+  #orb { --level:0; flex:none; width:48px; height:48px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #8fd1c7, var(--accent)); transform:scale(calc(1 + var(--level) * .6)); transition:transform .08s linear, background .3s; }
+  #voice[data-state="listening"] #orb { background:radial-gradient(circle at 35% 30%, #86efac, #16a34a); }
+  #voice[data-state="thinking"] #orb { animation:pulse 1s ease-in-out infinite; background:radial-gradient(circle at 35% 30%, #fcd34d, #d97706); }
+  #voice[data-state="watching"] #orb { animation:breathe 3.2s ease-in-out infinite; background:radial-gradient(circle at 35% 30%, #99f6e4, #0d9488); }
+  @keyframes pulse { 50% { transform:scale(1.15); } } @keyframes breathe { 50% { transform:scale(1.08); } }
+  @media (prefers-reduced-motion: reduce) { #orb { transition:none; animation:none !important; } }
+  #voice .body { flex:1; min-width:0; }
+  #voice[hidden], #alert[hidden], #summary[hidden], #replay[hidden], #plan[hidden] { display:none; }
+</style>
+</head>
+<body>
+<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><span class="hint">Tutor</span><span class="pill">Private workspace</span></div></header>
+<main>
+  <p class="eyebrow">Teach a new hire</p>
+  <h1>GroundZero Tutor</h1>
+  <p class="sub">Work a case on your own screen. The tutor explains each step the way the expert did, asks you to predict the next decision, and stops you before a guardrail is broken.</p>
+
+  <div id="load" class="card">
+    <div class="row">
+      <button id="load-sample" class="ghost">Use the sample invoice Work Map</button>
+      <label class="hint">…or load a Work Map JSON <input id="load-file" type="file" accept="application/json,.json"></label>
+    </div>
+    <div id="load-msg" class="hint" style="margin-top:6px"></div>
+  </div>
+
+  <div id="voice" class="card" data-state="idle" hidden role="status" aria-live="polite">
+    <div id="orb" aria-hidden="true"></div>
+    <div class="body">
+      <div class="hint"><span id="voice-label">Ready</span> · <span id="watch"></span></div>
+      <div id="voice-q"></div>
+      <div id="voice-a"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button id="check-now" class="ghost" title="Check what is on screen against the expert's rules before you save">Check before I save</button>
+      <button id="voice-end" class="ghost">Finish</button>
+    </div>
+  </div>
+
+  <div id="alert" class="card" hidden>
+    <h3 style="margin:0 0 6px">Stop: the expert would pause here</h3>
+    <div id="alert-text"></div>
+    <div id="alert-moment" class="hint"></div>
+    <video id="replay" controls playsinline hidden></video>
+  </div>
+
+  <div id="plan" class="card" hidden>
+    <div class="row" style="justify-content:space-between"><h3 id="plan-title" style="margin:0"></h3><button id="start">● Share my screen &amp; start</button></div>
+    <ol id="steps" class="steps" style="margin-top:12px"></ol>
+  </div>
+
+  <div id="summary" class="card" hidden>
+    <h3 style="margin:0 0 8px">What you have mastered</h3>
+    <ul id="mastered"></ul>
+    <h3 style="margin:12px 0 8px">Practice next</h3>
+    <ul id="practice"></ul>
+  </div>
+</main>
+<script type="module" src="tutor.js"></script>
+</body>
+</html>

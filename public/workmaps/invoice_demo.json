@@ -1,0 +1,21 @@
+{
+  "schema": "groundzero.work-map/1",
+  "sample": true,
+  "process": { "name": "Supplier invoices to cost centers (sample)" },
+  "steps": [
+    { "id": "s1", "title": "Open the next invoice", "screen_moment": { "t": 0, "t_end": 20, "nodes": ["n1"] }, "decision": null, "reason": null, "needs_reason": false, "guardrails": [] },
+    { "id": "s2", "title": "Check supplier and PO", "screen_moment": { "t": 20, "t_end": 55, "nodes": ["n2"] }, "decision": "Match the invoice to its purchase order", "reason": { "words": "No purchase order, no booking. I send it back to the buyer.", "source": "live", "screen_moment": { "t": 38, "node": "n2" } }, "needs_reason": false,
+      "guardrails": [ { "kind": "stop_and_ask", "rule": "Unknown supplier: stop and ask the controller", "words": "If I have never seen the supplier, I stop and ask the controller.", "source": "live", "screen_moment": { "t": 44, "node": "n2" } } ] },
+    { "id": "s3", "title": "Check for duplicates", "screen_moment": { "t": 55, "t_end": 120, "nodes": ["n3"] }, "decision": "Hold the invoice when the supplier double-bills in December", "reason": { "words": "This supplier double-bills every December, so I hold it until accounting confirms.", "source": "live", "screen_moment": { "t": 97, "node": "n3" } }, "needs_reason": false,
+      "guardrails": [ { "kind": "exception", "rule": "December invoices from the double-billing supplier are held", "words": "This supplier double-bills every December, so I hold it until accounting confirms.", "source": "live", "screen_moment": { "t": 97, "node": "n3" } } ] },
+    { "id": "s4", "title": "Code invoice to cost center", "screen_moment": { "t": 120, "t_end": 192, "nodes": ["n4"] }, "decision": "Re-code from opex (4711) to capex (0400)", "reason": { "words": "Equipment over 5,000 euro is always capex.", "source": "live", "screen_moment": { "t": 195, "node": "n4" } }, "needs_reason": false,
+      "guardrails": [
+        { "kind": "limit", "rule": "Equipment over 5,000 EUR is booked as capex (0400)", "words": "Equipment over 5,000 euro is always capex.", "source": "live", "screen_moment": { "t": 195, "node": "n4" } },
+        { "kind": "stop_and_ask", "rule": "No asset number: do not book capex", "words": "Without an asset number I do not book capex, I ask the controller first.", "source": "debrief", "screen_moment": { "t": 192, "node": "n4" } } ] },
+    { "id": "s5", "title": "Route for approval", "screen_moment": { "t": 192, "t_end": 260, "nodes": ["n5"] }, "decision": "Send foreign-subsidiary invoices for a second approval", "reason": { "words": "Anything from the Czech subsidiary needs a second approval.", "source": "live", "screen_moment": { "t": 230, "node": "n5" } }, "needs_reason": false, "guardrails": [] },
+    { "id": "s6", "title": "Post the invoice", "screen_moment": { "t": 260, "t_end": 290, "nodes": ["n6"] }, "decision": null, "reason": null, "needs_reason": false, "guardrails": [] },
+    { "id": "s7", "title": "Log it in the close sheet", "screen_moment": { "t": 290, "t_end": 320, "nodes": ["n7"] }, "decision": null, "reason": null, "needs_reason": false, "guardrails": [] }
+  ],
+  "debrief": { "followups": [], "teach_back": null, "followups_answered": 3, "followups_ok": true, "confirmed": true, "complete": true },
+  "generated_at": "2026-10-04T00:00:00.000Z"
+}

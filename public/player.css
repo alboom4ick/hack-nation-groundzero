@@ -6,6 +6,7 @@ html, body { margin:0; height:100%; overflow:hidden; background:#0b0d10; color:v
 #stage { cursor:crosshair; }
 #lines, #overlay { pointer-events:none; }
 #top { position:fixed; top:0; left:0; right:0; padding:calc(var(--safe-t) + 8px) calc(var(--safe-r) + 12px) 8px calc(var(--safe-l) + 12px); display:flex; justify-content:space-between; align-items:center; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; background:linear-gradient(rgba(0,0,0,.55), transparent); }
+#top .tools { display:flex; gap:8px; }
 #top button { background:var(--scrim); color:var(--ink); border:0; border-radius:999px; width:36px; height:36px; font-size:18px; }
 #actions { position:fixed; left:0; right:0; bottom:0; display:flex; gap:12px; padding:12px calc(var(--safe-r) + 16px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 16px); background:linear-gradient(transparent, rgba(0,0,0,.6)); }
 #actions:empty { display:none; }
@@ -32,3 +33,7 @@ html, body { margin:0; height:100%; overflow:hidden; background:#0b0d10; color:v
 .link { pointer-events:auto; position:absolute; right:calc(var(--safe-r) + 12px); top:calc(var(--safe-t) + 52px); background:var(--scrim); color:var(--ink); border:0; border-radius:10px; padding:6px 10px; font-size:13px; }
 @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(255,212,0,.6), 0 0 0 2px rgba(0,0,0,.4); } 100% { box-shadow:0 0 0 24px rgba(255,212,0,0), 0 0 0 2px rgba(0,0,0,.4); } }
 @keyframes bob { from { margin-top:-6px; } to { margin-top:6px; } }
+
+#voice-btn.speaking { box-shadow:0 0 0 2px #4ade80; }
+#voice-btn.blocked { animation:pulse 1.2s infinite; box-shadow:0 0 0 2px #facc15; }
+@keyframes pulse { 50% { opacity:.4; } }
