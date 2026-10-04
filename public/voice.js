@@ -1,7 +1,7 @@
 // Speech-to-speech loop pieces: speak (ElevenLabs TTS), listen (mic + silence detection),
 // transcribe (ElevenLabs STT). Each drives the orb's --level so it pulses with the audio.
 
-const LABELS = { idle: 'Ready', speaking: 'Claude is asking…', listening: 'Listening…', thinking: 'Transcribing…', watching: 'Watching quietly…', private: 'Off the record' };
+const LABELS = { idle: 'Ready', speaking: 'Claude is asking…', listening: 'Listening…', thinking: 'Working…', watching: 'Watching quietly…', private: 'Off the record' };
 // The voice panel can live in a Picture-in-Picture window, so lookups go through whichever document holds it.
 let doc = document;
 export const setDoc = (d) => { doc = d; };
@@ -21,25 +21,37 @@ const setLevel = (v) => $('orb').style.setProperty('--level', v.toFixed(3));
 // Ends whatever speak()/listen() is currently running (used by Skip / End).
 export const interrupt = () => stopCurrent?.();
 
+// A timer, not requestAnimationFrame: the person works in another tab, and a hidden page gets no animation frames,
+// so listen() would never notice the silence that ends an answer.
 function rmsMeter(analyser, onLevel) {
   const buf = new Uint8Array(analyser.fftSize);
-  let raf;
   const tick = () => {
     analyser.getByteTimeDomainData(buf);
     let sum = 0;
     for (const b of buf) sum += ((b - 128) / 128) ** 2;
     onLevel(Math.sqrt(sum / buf.length));
-    raf = requestAnimationFrame(tick);
   };
+  const timer = setInterval(tick, 50);
   tick();
-  return () => cancelAnimationFrame(raf);
+  return () => clearInterval(timer);
+}
+
+// Audio for a sentence is fetched ahead of time (prefetch), so the next part of a long text starts without a gap.
+const ahead = new Map();
+const fetchAudio = async (text) => {
+  const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.blob();
+};
+export function prefetch(text) {
+  if (!ahead.has(text)) { const p = fetchAudio(text); p.catch(() => ahead.delete(text)); ahead.set(text, p); }
 }
 
 export async function speak(text) {
   ctx ??= new AudioContext();
-  const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
-  if (!res.ok) throw new Error(await errorText(res));
-  const url = URL.createObjectURL(await res.blob());
+  const pending = ahead.get(text);
+  ahead.delete(text);
+  const url = URL.createObjectURL(await (pending ?? fetchAudio(text)).catch(() => fetchAudio(text)));
   const audio = new Audio(url);
   const src = ctx.createMediaElementSource(audio);
   const analyser = ctx.createAnalyser();

@@ -34,6 +34,21 @@ test('interventionFor uses the guardrail\'s own words and screen moment, not a p
   assert.equal(interventionFor(capex, null).words, capex.reason.words);
 });
 
+test('interventionFor starts a sentence with a capital and uses the named expert', () => {
+  const plain = interventionFor(capex, 0);
+  assert.match(plain.ask, /^Wait\. The expert would stop here\./);
+  assert.match(plain.explain, /^The expert said: "Equipment over 5,000 euro is always capex\."/);
+  const named = interventionFor(capex, 0, 'Sabine');
+  assert.match(named.ask, /^Wait\. Sabine would stop here\. Why do you think\?/);
+  assert.match(named.explain, /^Sabine said:/);
+  const viaCheck = sanitizeCheck({ verdict: 'violation', step: 's4', guardrail: 0, observed: 'x' }, { ...workMap, process: { ...workMap.process, expert: 'Sabine' } });
+  assert.match(viaCheck.intervention.ask, /^Wait\. Sabine would stop here\./);
+});
+
+test('every step of the sample Work Map links to the expert\'s own words (M5)', () => {
+  for (const s of workMap.steps) assert.ok(s.reason || s.guardrails.length || s.said, `${s.id} has no words`);
+});
+
 test('sanitizeCheck keeps a real violation and drops invented ones', () => {
   const ok = sanitizeCheck({ verdict: 'violation', step: 's4', guardrail: 0, observed: 'Coding a 7,200 EUR invoice to opex 4711.' }, workMap);
   assert.equal(ok.verdict, 'violation');

@@ -35,7 +35,7 @@ export function toAgentMarkdown(workMap) {
   const doc = toAgentInstructions(workMap);
   const out = [`# ${doc.process}`, '', ...doc.rules.map((r) => `- ${r}`), ''];
   for (const s of doc.steps) {
-    out.push(`## Step ${s.n}: ${s.title}`);
+    out.push(`## Step ${s.n}: ${s.title}`, `Step id: ${s.id}`);
     if (s.decide) out.push(`Decide: ${s.decide}`);
     if (s.because) out.push(`Because (expert): "${s.because}"`);
     for (const g of s.guardrails) out.push(`- ${g.kind.replaceAll('_', ' ').toUpperCase()}: ${g.rule} ("${g.expert_words}")`);

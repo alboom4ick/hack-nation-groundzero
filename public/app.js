@@ -1,7 +1,13 @@
 import * as voice from './voice.js';
-import { startLive, openIsland, fixDuration } from './live.js';
+import { startLive, openIsland, dismissIsland, fixDuration } from './live.js';
 import { toAgentInstructions, toAgentMarkdown } from './agent-export.js';
-import { toWorkMap, debriefStatus, ensureGuardrailQuestion } from './workmap.js';
+import { LANGUAGES, getLanguage, setLanguage } from './language.js';
+import { ocrEnabled, setOcrEnabled } from './ocr-redact.js';
+import { openInterviewerVoice, builtinVoice } from './voice-turn.js';
+import { compareWorkMaps } from './compare.js';
+import { ensureGuardrailQuestion } from './pacing.js';
+import { createDebrief } from './debrief.js';
+import { readWorkMap } from './workmap.js';
 
 const PAGE_SIZE = 5;
 
@@ -23,7 +29,7 @@ function resetSession(name) {
   videoName = name;
   narration = [];
   $('workmap').hidden = true;
-  mapSteps = []; mapUnclear = []; followups = []; teachBack = null;
+  debrief.reset();
   segments = [];
   $('segments').replaceChildren();
   $('pager').hidden = true;
@@ -43,7 +49,7 @@ window.addEventListener('live:done', async ({ detail }) => {
   narration = detail.narration ?? [];
   page = 0;
   render();
-  $('status').textContent = `${segments.length} live segments · ${video.duration.toFixed(1)} s`;
+  $('status').textContent = `${segments.length} live segments · ${video.duration.toFixed(1)} s${detail.shortfall ? ` · ${detail.shortfall} Use "Answer open questions" below to cover the rest.` : ''}`;
 });
 
 function seek(v, t) {
@@ -112,7 +118,7 @@ async function describeSeg(s) {
   const res = await fetch('/api/describe', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ frames: s.frames, frameTimes: s.frameTimes, tStart: s.tStart, tEnd: s.tEnd }),
+    body: JSON.stringify({ frames: s.frames, frameTimes: s.frameTimes, tStart: s.tStart, tEnd: s.tEnd, language: getLanguage() }),
   });
   const data = await readJson(res);
   if (!res.ok) throw new Error(data.error ?? res.statusText);
@@ -183,7 +189,7 @@ function showResult(s, out) {
     const go = document.createElement('button');
     go.className = 'ghost';
     go.textContent = 'Show frame';
-    go.addEventListener('click', () => { video.pause(); video.currentTime = s.frameTimes[q.frame] ?? s.tStart; });
+    go.addEventListener('click', () => seekTo(s.frameTimes[q.frame] ?? s.tStart));
     top.append(text, go);
     row.append(top);
     if (q.answer) {
@@ -199,6 +205,7 @@ function showResult(s, out) {
 // ---- Voice Q&A: ask each question at its keyframe, listen, then play on to the next ----
 let currentQ = null;
 let run = null;
+let turns = null; // the voice the running Q&A or debrief asks through
 
 const buildQueue = () => segments
   .flatMap((s) => (s.result?.questions ?? []).map((q) => ({ s, q, time: s.frameTimes[q.frame] ?? s.tStart })))
@@ -206,8 +213,9 @@ const buildQueue = () => segments
   .sort((a, b) => a.time - b.time);
 
 $('voice-start').addEventListener('click', startVoice);
-$('voice-skip').addEventListener('click', () => { if (run) { run.skip = true; voice.interrupt(); } });
-$('voice-end').addEventListener('click', () => { if (run) { run.cancelled = true; voice.interrupt(); } });
+$('voice-skip').addEventListener('click', () => { if (run) { run.skip = true; turns?.cancel(); } });
+$('voice-end').addEventListener('click', () => { if (run) { run.cancelled = true; turns?.cancel(); } });
+$('voice-close').addEventListener('click', () => { if (!run) dismissIsland(); });
 
 function showQuestion(item) {
   currentQ = item.q;
@@ -238,6 +246,7 @@ async function startVoice() {
   const queue = buildQueue();
   if (!queue.length) { $('status').textContent = 'Describe the segments first — no open questions.'; return; }
   run = { cancelled: false, skip: false };
+  turns = builtinVoice(voice, { onState: voice.setState });
   $('voice').hidden = false;
   $('voice-total').textContent = queue.length;
   try {
@@ -252,18 +261,11 @@ async function startVoice() {
       if (run.cancelled) break;
       run.skip = false;
 
-      voice.setState('speaking');
-      await voice.speak(item.q.text);
+      const answer = await turns.ask(item.q.text, { kind: item.q.kind });
       if (run.cancelled) break;
-      if (run.skip) continue;
+      if (!answer) continue; // silence or skipped: stays unanswered
 
-      voice.setState('listening');
-      const blob = await voice.listen();
-      if (run.cancelled) break;
-      if (!blob) continue; // silence or skipped: stays unanswered
-
-      voice.setState('thinking');
-      item.q.answer = await voice.transcribe(blob);
+      item.q.answer = answer;
       item.q.answerT = item.time;
       $('voice-a').textContent = item.q.answer;
       showQuestion(item);
@@ -275,6 +277,7 @@ async function startVoice() {
     currentQ = null;
     video.pause();
     run = null;
+    turns = null;
     render();
     $('voice-q').textContent = buildQueue().length ? 'Stopped.' : 'All questions answered.';
   }
@@ -301,13 +304,21 @@ function nodeInputs() {
 }
 
 // ---- Module 2: Work Map, debrief with follow-ups, teach-back ----
-let mapSteps = [];
-let mapUnclear = [];
-let followups = [];   // [{ step, question, answer }] asked in the debrief
-let teachBack = null; // { text, confirmed, correction }
+const debrief = createDebrief({
+  build: (answered) => {
+    const inputs = nodeInputs();
+    if (!inputs.length) throw new Error('Describe the segments first.');
+    return post('/api/workmap', { nodes: inputs, debrief: answered });
+  },
+  explain: (steps) => post('/api/teachback', { steps }),
+  judge: (explanation, reply) => post('/api/teachback/judge', { explanation, reply }),
+  onChange: () => renderMap(),
+});
+const workMapFile = () => debrief.workMap({ name: videoName, duration: +video.duration.toFixed(2) });
 
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-const seekTo = (t) => { video.pause(); video.currentTime = t; video.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+// The player is sticky at the top of the page, so seeking never needs to scroll.
+const seekTo = (t) => { video.hidden = false; video.pause(); video.currentTime = t; };
 
 function momentLink(t, label = 'screen moment') {
   const b = document.createElement('button');
@@ -326,24 +337,35 @@ function field(label, ...children) {
   return d;
 }
 
-const quoteEl = (words) => Object.assign(document.createElement('span'), { className: 'quote', textContent: `“${words}” ` });
+const quoteEl = (words, gloss) => Object.assign(document.createElement('span'), { className: 'quote', textContent: `“${words}” ${gloss ? `(${gloss}) ` : ''}` });
 const GUARD_LABEL = { limit: 'Limit', exception: 'Exception', stop_and_ask: 'Stop and ask' };
+
+function forgetButton(target, what) {
+  const b = document.createElement('button');
+  b.className = 'link';
+  b.textContent = '✕ off the record';
+  b.title = `Remove this ${what} from the Work Map and its exports`;
+  b.addEventListener('click', () => debrief.forget(target));
+  return b;
+}
 
 function renderMap() {
   $('workmap').hidden = false;
+  const mapSteps = debrief.steps;
   const items = mapSteps.map((s, i) => {
     const li = document.createElement('li');
     li.className = 'mstep';
     const h = document.createElement('h4');
     h.textContent = `Step ${i + 1} of ${mapSteps.length}: ${s.title} `;
-    h.append(momentLink(s.screen_moment.t, 'screen moment'));
+    h.append(momentLink(s.screen_moment.t, 'screen moment'), forgetButton({ part: 'step', step: s.id }, 'step'));
     li.append(h);
     li.append(field('Decision', s.decision ?? '—'));
-    if (s.reason) li.append(field('Reason', quoteEl(s.reason.words), s.reason.source === 'live' ? momentLink(s.reason.screen_moment.t, 'said here') : Object.assign(document.createElement('span'), { className: 'hint', textContent: '(debrief)' })));
-    else if (s.needs_reason) li.append(Object.assign(field('Reason', 'not stated yet, asked in debrief'), { className: 'field gap' }));
-    for (const g of s.guardrails) {
-      li.append(field(GUARD_LABEL[g.kind], `${g.rule} `, quoteEl(g.words), g.source === 'live' ? momentLink(g.screen_moment.t, 'said here') : Object.assign(document.createElement('span'), { className: 'hint', textContent: '(debrief)' })));
-    }
+    if (s.reason) li.append(field('Reason', quoteEl(s.reason.words, s.reason.gloss), s.reason.source === 'live' ? momentLink(s.reason.screen_moment.t, 'said here') : Object.assign(document.createElement('span'), { className: 'hint', textContent: '(debrief)' }), forgetButton({ part: 'reason', step: s.id }, 'reason')));
+    else if (s.said) li.append(field('Said', quoteEl(s.said.words), momentLink(s.said.screen_moment.t, 'said here'), forgetButton({ part: 'said', step: s.id }, 'quote')));
+    if (!s.reason && s.needs_reason) li.append(Object.assign(field('Reason', 'not stated yet, asked in debrief'), { className: 'field gap' }));
+    s.guardrails.forEach((g, gi) => {
+      li.append(field(GUARD_LABEL[g.kind], `${g.rule} `, quoteEl(g.words, g.gloss), g.source === 'live' ? momentLink(g.screen_moment.t, 'said here') : Object.assign(document.createElement('span'), { className: 'hint', textContent: '(debrief)' }), forgetButton({ part: 'guardrail', step: s.id, index: gi }, 'guardrail')));
+    });
     if (!s.guardrails.length) li.append(field('Guardrails', '—'));
     return li;
   });
@@ -360,8 +382,7 @@ function renderMap() {
 }
 
 function renderDebrief() {
-  const st = debriefStatus({ followups, teachBack });
-  const open = mapUnclear.filter((u) => !followups.some((f) => f.question === u.question && f.answer));
+  const { status: st, open, teachBack } = debrief;
   $('debrief-open').textContent = open.length ? `Still unclear (${open.length}): ${open.map((u) => u.question).join(' · ')}` : 'Nothing left to ask.';
   $('debrief-status').textContent = st.complete
     ? 'Debrief complete: teach-back confirmed.'
@@ -376,28 +397,16 @@ async function post(url, body) {
   return data;
 }
 
-async function buildMap() {
-  const inputs = nodeInputs();
-  if (!inputs.length) throw new Error('Describe the segments first.');
-  const data = await post('/api/workmap', { nodes: inputs, debrief: followups.filter((f) => f.answer) });
-  mapSteps = data.steps;
-  // Questions the expert already answered in the debrief are not asked again.
-  mapUnclear = data.unclear.filter((u) => !followups.some((f) => f.question === u.question));
-  renderMap();
-  return data;
-}
-
 $('build-map').addEventListener('click', async () => {
   const btn = $('build-map');
   btn.disabled = true;
   $('status').textContent = 'building Work Map…';
   try {
-    followups = [];
-    teachBack = null;
     await describeAll();
-    const data = await buildMap();
+    const data = await debrief.start();
     const dropped = data.dropped.quotes ? ` · ${data.dropped.quotes} quote(s) dropped: not the expert's words` : '';
-    $('status').textContent = `Work Map: ${mapSteps.length} steps${dropped}`;
+    const unlinked = data.unlinked ? ` · ${data.unlinked} step(s) without the expert's words: say what you are doing while you work` : '';
+    $('status').textContent = `Work Map: ${debrief.steps.length} steps${dropped}${unlinked}`;
   } catch (err) {
     $('status').textContent = 'failed: ' + err.message;
   } finally {
@@ -405,73 +414,42 @@ $('build-map').addEventListener('click', async () => {
   }
 });
 
-const sentences = (text, max = 450) => {
-  const out = [];
-  for (const s of text.match(/[^.!?]+[.!?]*\s*/g) ?? [text]) {
-    if (out.length && (out.at(-1) + s).length <= max) out[out.length - 1] += s;
-    else out.push(s);
-  }
-  return out.map((s) => s.trim()).filter(Boolean);
-};
-
-async function ask(text) {
+// G3: the debrief has the same ElevenAgents voice as the capture when the interviewer agent is set up (its mic is
+// only open while a question or the teach-back is out), and the built-in voice otherwise.
+async function ask(text, { teachback = false, n, total } = {}) {
+  run.skip = false;
+  if (teachback) { $('voice-total').textContent = '…'; $('status').textContent = ''; } else { $('voice-n').textContent = n; $('voice-total').textContent = total; }
   $('voice-q').textContent = text;
   $('voice-a').textContent = '';
-  voice.setState('speaking');
-  for (const part of sentences(text)) { await voice.speak(part); if (run.cancelled || run.skip) return null; }
-  voice.setState('listening');
-  const blob = await voice.listen();
-  if (run.cancelled || !blob) return null;
-  voice.setState('thinking');
-  const answer = await voice.transcribe(blob);
+  const answer = await turns.ask(text, { kind: 'debrief', teachback });
+  if (run.cancelled || run.skip || !answer) return null;
   $('voice-a').textContent = answer;
   return answer;
 }
 
-// Debrief: ask what is still unclear, rebuild the map with the answers, then explain the process back
-// until the expert confirms (at most two corrections).
+// Debrief: ask what is still unclear, rebuild the map with the answers, then explain the process back until the
+// expert confirms. The procedure itself lives in debrief.js; this gives it a voice and a stop button.
 async function runDebrief() {
-  const queue = mapUnclear.filter((u) => !followups.some((f) => f.question === u.question));
   run = { cancelled: false, skip: false };
   $('voice').hidden = false;
-  $('voice-total').textContent = queue.length;
+  $('voice-total').textContent = debrief.open.length;
   $('voice-n').textContent = 0;
+  turns = await openInterviewerVoice({
+    speech: voice, language: getLanguage(), onState: voice.setState,
+    onError: (m) => { $('voice-a').textContent = 'agent: ' + m; },
+    onNotice: (m) => { $('status').textContent = m; },
+  });
   try {
-    for (const [i, u] of queue.entries()) {
-      if (run.cancelled) break;
-      run.skip = false;
-      $('voice-n').textContent = i + 1;
-      const answer = await ask(u.question);
-      followups.push({ step: u.step, question: u.question, answer });
-      renderDebrief();
-    }
-    if (run.cancelled) return;
-
-    $('voice-total').textContent = '…';
-    $('status').textContent = 'updating Work Map…';
-    await buildMap();
-
-    for (let round = 0; round < 3 && !run.cancelled; round++) {
-      const { text } = await post('/api/teachback', { steps: mapSteps });
-      teachBack = { text, confirmed: false, correction: null };
-      renderDebrief();
-      run.skip = false;
-      const reply = await ask(text);
-      if (!reply) break;
-      const verdict = await post('/api/teachback/judge', { explanation: text, reply });
-      teachBack = { text, ...verdict };
-      renderDebrief();
-      if (verdict.confirmed) break;
-      followups.push({ step: null, question: `Correction to teach-back: ${text}`, answer: verdict.correction ?? reply });
-      await buildMap();
-    }
+    await debrief.run({ ask, stopped: () => run.cancelled, onPhase: (m) => { $('voice-q').textContent = m; $('voice-a').textContent = ''; voice.setState('thinking'); } });
   } catch (err) {
     $('voice-a').textContent = 'error: ' + err.message;
   } finally {
+    turns.close();
+    turns = null;
     voice.setState('idle');
     run = null;
     renderDebrief();
-    $('voice-q').textContent = teachBack?.confirmed ? 'Teach-back confirmed.' : 'Debrief stopped.';
+    $('voice-q').textContent = debrief.teachBack?.confirmed ? 'Teach-back confirmed.' : 'Debrief stopped.';
     $('status').textContent = '';
   }
 }
@@ -483,7 +461,7 @@ $('debrief-start').addEventListener('click', async () => {
 });
 
 $('download-map').addEventListener('click', () => {
-  const json = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
+  const json = workMapFile();
   const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: `${videoName.replace(/\.[^.]+$/, '')}.work-map.json` });
   a.click();
@@ -492,7 +470,7 @@ $('download-map').addEventListener('click', () => {
 
 // Hand the Work Map to the Module-3 tutor (same browser, so localStorage carries it).
 $('teach-map').addEventListener('click', () => {
-  const json = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
+  const json = workMapFile();
   try { localStorage.setItem('groundzero.workmap', JSON.stringify(json)); } catch { $('status').textContent = 'Could not hand over the Work Map; download it and load it in the tutor.'; return; }
   window.open('tutor.html', '_blank');
 });
@@ -505,8 +483,45 @@ function download(name, text, type) {
 
 // Stretch: the Work Map as instructions an agent can load (steps in order, guardrails, where to stop).
 $('download-agent').addEventListener('click', () => {
-  const map = toWorkMap({ video: { name: videoName, duration: +video.duration.toFixed(2) }, steps: mapSteps, followups, teachBack });
+  const map = workMapFile();
   const base = videoName.replace(/\.[^.]+$/, '');
   download(`${base}.agent-instructions.json`, JSON.stringify(toAgentInstructions(map), null, 2), 'application/json');
   download(`${base}.agent-instructions.md`, toAgentMarkdown(map), 'text/markdown');
 });
+
+// S2: the expert picks the language they speak; the tutor stays in English.
+$('lang').replaceChildren(...Object.entries(LANGUAGES).map(([code, name]) => new Option(name, code)));
+$('lang').value = getLanguage();
+$('lang').addEventListener('change', () => setLanguage($('lang').value));
+
+// A5: areas of the shared screen that are painted over before any frame is analysed.
+
+// S1: two experts, one task. Differences by step, and the why-question each expert should be asked.
+async function readMap(input) {
+  const f = input.files?.[0];
+  if (!f) throw new Error('choose both Work Map files');
+  let map;
+  try { map = readWorkMap(JSON.parse(await f.text())); } catch (err) { throw new Error(`${f.name}: ${err.message}`); }
+  return { map, name: f.name.replace(/\.work-map\.json$|\.json$/, '') };
+}
+$('cmp-go').addEventListener('click', async () => {
+  const out = $('cmp-out');
+  out.replaceChildren();
+  try {
+    const [a, b] = [await readMap($('cmp-a')), await readMap($('cmp-b'))];
+    const r = compareWorkMaps(a.map, b.map, { nameA: a.name, nameB: b.name });
+    const add = (tag, text, parent = out) => parent.append(Object.assign(document.createElement(tag), { textContent: text }));
+    add('p', `${r.matched} steps match; ${r.differences.length} difference${r.differences.length === 1 ? '' : 's'}.`);
+    const diffs = document.createElement('ul');
+    for (const d of r.differences) add('li', `${d.kind}: ${d.detail}`, diffs);
+    out.append(diffs);
+    if (r.questions.length) {
+      add('h4', 'Questions for the apprentice to ask');
+      const qs = document.createElement('ul');
+      for (const q of r.questions) add('li', `To ${q.to === 'a' ? a.name : b.name}: ${q.question}`, qs);
+      out.append(qs);
+    }
+  } catch (err) { out.textContent = 'Could not compare: ' + err.message; }
+});
+$('ocr-pii').checked = ocrEnabled();
+$('ocr-pii').addEventListener('change', () => setOcrEnabled($('ocr-pii').checked));

@@ -1,24 +1,17 @@
 // Live capture: the expert shares their screen, the apprentice watches quietly and asks "why" at natural pauses.
 // The voice panel floats in a Picture-in-Picture window (the "island") while the agent is working.
 import * as voice from './voice.js';
-import { openAgent, agentAvailable } from './agent.js';
-import { openScribe } from './scribe.js';
-import { createVoiceGate } from './pause.js';
+import { openInterviewerVoice } from './voice-turn.js';
+import { openScreenWatch } from './screen-watch.js';
+import { getLanguage } from './language.js';
 import { redact } from './redact.js';
+import { screenContext } from './asker.js';
+import { createPacer } from './pacing.js';
 
+// When the expert has paused is the screen watch's call (screen-watch.js); what to ask and how often is the
+// pacer's (pacing.js). These only shape the segments sent to the vision model.
 const T = {
-  probeMs: 500,         // activity probe period
-  frameMs: 1500,        // keyframe period for the vision model
-  probe: { w: 128, h: 72 },
-  pixelDelta: 60,       // summed RGB difference that counts as a changed pixel
-  activePixels: 4,      // changed pixels that count as "something moved" (a caret or a few typed characters)
-  idleSec: 2.5,         // screen must be still this long before asking
-  quietSec: 1.8,        // and the expert must not be talking
-  voiceLevel: 0.02,
-  firstAskSec: 20,      // never ask in the first seconds
-  gapSec: 45,           // minimum spacing between live questions
-  maxPer10Min: 5,       // the rest waits for the debrief
-  freshSec: 45,         // a question about something older than this is stale
+  segCloseSec: 2,       // a still screen this long closes the segment being collected
   segMaxFrames: 3,
 };
 
@@ -27,10 +20,16 @@ export { redact };
 // ---------- Picture-in-Picture island ----------
 let pip = null;
 
-export async function openIsland() {
+let opening = null; // in-flight open, so overlapping calls share one window
+
+export function openIsland() {
+  voice.byId('voice').hidden = false;
+  if (pip) return Promise.resolve();
+  return (opening ??= openWindow().finally(() => { opening = null; }));
+}
+
+async function openWindow() {
   const el = voice.byId('voice');
-  el.hidden = false;
-  if (pip) return;
   el.classList.add('island-float'); // fallback: pinned bottom-right of the page
   if (!('documentPictureInPicture' in window)) return;
   try {
@@ -55,17 +54,13 @@ export async function openIsland() {
 }
 
 export const closeIsland = () => pip?.close();
+export const dismissIsland = () => { voice.byId('voice').hidden = true; closeIsland(); };
 
 // ---------- Live session ----------
 let session = null;
 const $ = (id) => document.getElementById(id);
 const el = (id) => voice.byId(id);
-const rms = (an, buf) => {
-  an.getByteTimeDomainData(buf);
-  let s = 0;
-  for (const b of buf) s += ((b - 128) / 128) ** 2;
-  return Math.sqrt(s / buf.length);
-};
+const HOLD = { typing: 'question ready, waiting for you to stop typing', speaking: 'question ready, waiting for you to finish speaking', later: 'question saved for later' };
 
 export async function startLive() {
   if (session) return;
@@ -79,83 +74,32 @@ export async function startLive() {
     return;
   }
   await islandP;
-  let mic;
-  try { mic = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (err) {
-    display.getTracks().forEach((t) => t.stop());
-    $('live-status').textContent = 'Microphone needed: ' + err.message;
+  // The watch asks for the microphone, tells us when the expert is busy or has paused, and takes the masked frames.
+  let watch;
+  try { watch = await openScreenWatch({ display }); } catch (err) {
+    $('live-status').textContent = err.message;
     return;
   }
-
-  const sharedVideo = Object.assign(document.createElement('video'), { srcObject: display, muted: true, playsInline: true });
-  await sharedVideo.play();
-  const ctx = new AudioContext();
-  const analyser = ctx.createAnalyser();
-  ctx.createMediaStreamSource(mic).connect(analyser);
-  const micBuf = new Uint8Array(analyser.fftSize);
 
   const chunks = [];
   const rec = new MediaRecorder(new MediaStream(display.getVideoTracks()), { mimeType: 'video/webm' });
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
   rec.start(1000);
 
-  const probeCanvas = new OffscreenCanvas(T.probe.w, T.probe.h);
-  const pctx = probeCanvas.getContext('2d', { willReadFrequently: true });
-  const frameW = 640;
-  const frameCanvas = new OffscreenCanvas(frameW, Math.round((frameW * sharedVideo.videoHeight) / sharedVideo.videoWidth));
-  const fctx = frameCanvas.getContext('2d');
-
   const s = session = {
     t0: performance.now(), pausedMs: 0, pausedAt: null, offRecord: false, busy: false, ended: false,
-    lastActivity: 0, lastVoice: 0, lastFrame: -Infinity, lastAskEnd: -Infinity, prev: null,
-    cur: { frames: [], frameTimes: [], active: false }, segments: [], queue: [], askTimes: [], asked: 0, guardrailAsked: false,
-    describing: Promise.resolve(), context: [],
+    cur: { frames: [], frameTimes: [], active: false }, segments: [],
+    describing: Promise.resolve(), context: [], narration: [],
   };
   const now = () => ((s.pausedAt ?? performance.now()) - s.t0 - s.pausedMs) / 1000;
+  const pacer = createPacer();
 
-  // ElevenAgents is the interviewer when set up. Its mic stays muted while the expert works, so it can never
-  // chime in on its own: our pause detector decides when, and only then do we unmute and cue the question.
-  let agent = null, askDone = null, heard = [];
-  if (await agentAvailable('interviewer')) {
-    try {
-      agent = await openAgent({
-        role: 'interviewer', firstMessage: '',
-        tools: { question_done: () => askDone?.() },
-        onMessage: ({ source, message }) => { if (source === 'user' && askDone) heard.push(message); },
-        onMode: () => {},
-        onError: (m) => { el('voice-a').textContent = 'agent: ' + m; },
-      });
-      agent.mute(true);
-    } catch (err) {
-      $('live-status').textContent = `ElevenAgents unavailable (${err.message}); using the built-in voice.`;
-    }
-  }
-  // Scribe v2 Realtime tells us when the expert is talking and when they pause; it also writes down what they
-  // say while working, so reasons they give unprompted can be quoted in the Work Map.
-  s.narration = [];
-  const gate = createVoiceGate({ quietSec: T.quietSec });
-  let scribe = null;
-  const startScribe = async () => {
-    try {
-      scribe = await openScribe({
-        onSpeech: () => gate.partial(now()),
-        onCommit: (text) => { gate.committed(); if (!s.busy && !s.offRecord && !s.ended) s.narration.push({ t: +now().toFixed(2), text: redact(text) }); },
-      });
-      gate.setScribe(true);
-    } catch (err) {
-      gate.setScribe(false);
-      $('live-status').textContent = `Scribe unavailable (${err.message}); pauses are detected from the microphone level instead.`;
-    }
-  };
-  await startScribe();
-
-  const askViaAgent = (text) => new Promise((resolve) => {
-    heard = [];
-    const done = () => { clearTimeout(timer); askDone = null; agent.mute(true); resolve(heard.join(' ').trim()); };
-    const timer = setTimeout(done, 70000);
-    askDone = done;
-    agent.mute(false);
-    voice.setState('listening');
-    agent.cue(`[ASK] "${text.replace(/"/g, "'")}"`);
+  // ElevenAgents is the interviewer when set up, the built-in voice otherwise. Either way it never chimes in on
+  // its own: our pause detector decides when, and only then is one question put to the expert.
+  const turns = await openInterviewerVoice({
+    speech: voice, language: getLanguage(), onState: voice.setState,
+    onError: (m) => { el('voice-a').textContent = 'agent: ' + m; },
+    onNotice: (m) => { $('live-status').textContent = m; },
   });
 
   $('live-card').classList.add('recording');
@@ -178,7 +122,7 @@ export async function startLive() {
     };
     dot(screenActive, 'screen');
     dot(voiceActive, 'voice');
-    el('island-status').append(`· asked ${s.asked}${s.guardrailAsked ? ' (guardrail ✓)' : ''}${note ? ' · ' + note : ''}`);
+    el('island-status').append(`· asked ${pacer.asked} of ${pacer.minQuestions}${pacer.guardrailAsked ? ' (guardrail ✓)' : ''}${note ? ' · ' + note : ''}`);
   };
 
   // ---- vision: closed segments go to the existing describe endpoint ----
@@ -193,112 +137,56 @@ export async function startLive() {
       try {
         const res = await fetch('/api/describe', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ frames: seg.frames, frameTimes: seg.frameTimes, tStart: seg.tStart, tEnd: seg.tEnd, context: s.context.slice(-3).join(' ') || undefined }),
+          body: JSON.stringify({ frames: seg.frames, frameTimes: seg.frameTimes, tStart: seg.tStart, tEnd: seg.tEnd, context: s.context.slice(-3).join(' ') || undefined, language: getLanguage() }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
         seg.result = await res.json();
         s.context.push(seg.result.description);
-        for (const q of seg.result.questions) s.queue.push({ s: seg, q, time: seg.frameTimes[q.frame] ?? seg.tStart, ready: now() });
+        // The agent's LLM sees what is on screen and the candidate questions; our gate still decides when it may speak.
+        if (!s.ended && !s.offRecord) turns.context(redact(screenContext(seg.result.description, seg.result.questions)));
+        pacer.add(seg);
       } catch (err) {
         el('voice-a').textContent = 'vision error: ' + err.message;
       }
     });
   };
 
-  // ---- question choice: guardrails first, then decisions, then missing slots; only fresh ones ----
-  const pick = () => {
-    const rank = (it) => (it.q.kind === 'guardrail' ? 3 : it.q.kind === 'branch' ? 2 : 1) + (it.q.kind === 'guardrail' && !s.guardrailAsked ? 2 : 0);
-    const fresh = s.queue.filter((it) => !it.q.asked && now() - it.s.tEnd < T.freshSec);
-    return fresh.sort((a, b) => rank(b) - rank(a) || b.time - a.time)[0];
-  };
-
   const ask = async (item) => {
     s.busy = true;
-    item.q.asked = true;
-    s.asked++;
-    if (item.q.kind === 'guardrail') s.guardrailAsked = true;
-    s.askTimes.push(now());
-    el('voice-n').textContent = s.asked;
+    pacer.began(item, now());
+    el('voice-n').textContent = pacer.asked;
     el('voice-q').textContent = item.q.text;
     el('voice-a').textContent = '';
     try {
-      if (agent) {
-        const said = await askViaAgent(item.q.text);
-        if (said && !s.ended) {
-          item.q.answer = redact(said);
-          item.q.answerT = now();
-          el('voice-a').textContent = item.q.answer;
-        }
-        return;
-      }
-      voice.setState('speaking');
-      await voice.speak(item.q.text);
-      if (s.ended) return;
-      voice.setState('listening');
-      const blob = await voice.listen();
-      if (blob && !s.ended) {
-        voice.setState('thinking');
-        item.q.answer = redact(await voice.transcribe(blob));
+      const said = await turns.ask(item.q.text, { kind: item.q.kind });
+      if (said && !s.ended) {
+        item.q.answer = said;
         item.q.answerT = now();
-        el('voice-a').textContent = item.q.answer;
+        el('voice-a').textContent = said;
       }
     } catch (err) {
       el('voice-a').textContent = 'error: ' + err.message;
     } finally {
-      s.lastAskEnd = now();
-      s.lastVoice = now();
-      gate.level(now());
+      pacer.ended(now());
+      watch.spoke();
       s.busy = false;
       if (!s.ended) voice.setState(s.offRecord ? 'private' : 'watching');
     }
   };
 
-  // ---- the loop: one tick every probeMs ----
-  const tick = () => {
-    if (s.ended || s.busy) return;
-    if (s.offRecord) { showStatus(false, false, 'nothing is recorded'); return; }
-    const t = now();
-
-    pctx.drawImage(sharedVideo, 0, 0, T.probe.w, T.probe.h);
-    const d = pctx.getImageData(0, 0, T.probe.w, T.probe.h).data;
-    if (s.prev) {
-      let changed = 0;
-      for (let p = 0; p < d.length; p += 4) {
-        if (Math.abs(d[p] - s.prev[p]) + Math.abs(d[p + 1] - s.prev[p + 1]) + Math.abs(d[p + 2] - s.prev[p + 2]) > T.pixelDelta) changed++;
-      }
-      if (changed >= T.activePixels) { s.lastActivity = t; s.cur.active = true; }
-    }
-    s.prev = d;
-    const level = rms(analyser, micBuf);
-    if (level > T.voiceLevel) { s.lastVoice = t; gate.level(t); }
-
-    if (t - s.lastFrame >= T.frameMs / 1000) {
-      s.lastFrame = t;
-      fctx.drawImage(sharedVideo, 0, 0, frameCanvas.width, frameCanvas.height);
-      frameCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 }).then((b) => new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }))
-        .then((url) => {
-          if (s.ended || s.offRecord) return;
-          s.cur.frames.push(url);
-          s.cur.frameTimes.push(t);
-          if (s.cur.frames.length >= T.segMaxFrames) closeSegment();
-        });
-    }
-
-    const screenIdle = t - s.lastActivity;
-    if (screenIdle >= 2 && s.cur.frames.length >= 2) closeSegment();
-    const screenActive = screenIdle < T.idleSec, voiceActive = gate.active(t);
-    const recent = s.askTimes.filter((a) => t - a < 600).length;
-    const item = pick();
-    let note = '';
-    if (item) {
-      if (screenActive) note = 'question ready, waiting for you to stop typing';
-      else if (voiceActive) note = 'question ready, waiting for you to finish speaking';
-      else if (t < T.firstAskSec || t - s.lastAskEnd < T.gapSec || recent >= T.maxPer10Min) note = 'question saved for later';
-      else { ask(item); return; }
-    }
-    showStatus(screenActive, voiceActive, note);
+  // ---- the loop: the watch ticks while the expert is on the record and the apprentice is not asking ----
+  const onFrame = (url, t) => {
+    s.cur.frames.push(url);
+    s.cur.frameTimes.push(t);
+    if (s.cur.frames.length >= T.segMaxFrames) closeSegment();
   };
-  const timer = setInterval(tick, T.probeMs);
+  const onTick = ({ t, moved, idleFor, screenActive, voiceActive }) => {
+    if (moved) s.cur.active = true;
+    if (idleFor >= T.segCloseSec && s.cur.frames.length >= 2) closeSegment();
+    const next = pacer.next({ t, screenActive, voiceActive, idleFor });
+    if (next?.ask) { ask(next.ask); return; }
+    showStatus(screenActive, voiceActive, next ? HOLD[next.hold] : '');
+  };
 
   // ---- controls ----
   const toggleOffRecord = () => {
@@ -306,22 +194,19 @@ export async function startLive() {
     el('island-rec').setAttribute('aria-pressed', String(s.offRecord));
     el('island-rec').textContent = s.offRecord ? 'Back on record' : 'Off the record';
     if (s.offRecord) {
-      askDone?.();
-      scribe?.close();
-      scribe = null;
-      gate.setScribe(false);
+      turns.cancel();
+      watch.pause();
       closeSegment(true);
       s.cur = { frames: [], frameTimes: [], active: false };
       s.pausedAt = performance.now();
       rec.pause();
       voice.setState('private');
+      showStatus(false, false, 'nothing is recorded');
     } else {
       s.pausedMs += performance.now() - s.pausedAt;
       s.pausedAt = null;
-      s.prev = null;
-      s.lastActivity = now();
+      watch.resume();
       rec.resume();
-      startScribe();
       voice.setState('watching');
     }
   };
@@ -330,35 +215,48 @@ export async function startLive() {
   const finish = async () => {
     if (s.ended) return;
     s.ended = true;
-    clearInterval(timer);
-    voice.interrupt();
-    askDone?.();
-    agent?.end();
-    scribe?.close();
+    el('voice-end').textContent = 'Stop';
+    watch.stop();
+    turns.close();
     if (s.offRecord) toggleOffRecord();
     closeSegment(true);
     const stopped = new Promise((r) => { rec.onstop = r; });
     rec.stop();
     display.getTracks().forEach((t) => t.stop());
-    mic.getTracks().forEach((t) => t.stop());
     $('live-status').textContent = 'Describing the last steps…';
     await Promise.all([stopped, s.describing]);
-    ctx.close();
     voice.setState('idle');
     delete el('voice').dataset.live;
     el('island-status').hidden = true;
     el('island-rec').hidden = true;
     el('voice-skip').hidden = false;
-    el('voice-q').textContent = `Captured ${s.segments.length} steps, ${s.asked} live question${s.asked === 1 ? '' : 's'}. Build the Work Map next.`;
+    el('voice-q').textContent = `Captured ${s.segments.length} segments, ${pacer.asked} live question${pacer.asked === 1 ? '' : 's'}${pacer.guardrailAsked ? ', one about a guardrail' : ''}. Build the Work Map next.`;
     el('voice-a').textContent = '';
     $('live-card').classList.remove('recording');
     $('live-start').disabled = false;
     $('live-status').textContent = `Session captured: ${s.segments.length} segments. Use the tools below to build the Work Map.`;
     session = null;
-    window.dispatchEvent(new CustomEvent('live:done', { detail: { blob: new Blob(chunks, { type: 'video/webm' }), segments: s.segments, narration: s.narration } }));
+    window.dispatchEvent(new CustomEvent('live:done', { detail: { blob: new Blob(chunks, { type: 'video/webm' }), segments: s.segments, narration: s.narration, shortfall: pacer.shortfall() } }));
   };
-  el('voice-end').onclick = finish;
+  // Stop is held behind a second click until the brief's minimum has been asked. Closing the shared window cannot
+  // be held, so that path finishes at once.
+  let stopArmed = null;
+  el('voice-end').onclick = () => {
+    const missing = pacer.shortfall();
+    if (!missing || stopArmed) { clearTimeout(stopArmed); finish(); return; }
+    el('voice-end').textContent = 'Stop anyway';
+    $('live-status').textContent = `${missing} Press Stop again to end anyway.`;
+    stopArmed = setTimeout(() => { stopArmed = null; el('voice-end').textContent = 'Stop'; }, 6000);
+  };
   display.getVideoTracks()[0].addEventListener('ended', finish);
+
+  // Scribe v2 Realtime (inside the watch) also writes down what the expert says while working, so reasons they
+  // give unprompted can be quoted in the Work Map.
+  await watch.start({
+    now, language: getLanguage(), frames: true, busy: () => s.busy, onTick, onFrame,
+    onSaid: (text, t) => s.narration.push({ t: +t.toFixed(2), text }),
+    onNotice: (m) => { $('live-status').textContent = `Recording. ${m}`; },
+  });
 }
 
 // Recorded webm blobs report an infinite duration until the player has seen the end.

@@ -90,3 +90,13 @@ test('guardrail_question becomes a question tagged kind=guardrail and does not c
   assert.deepEqual(g, { frame: 1, text: "Is there an amount where you'd stop?", kind: 'guardrail' });
   assert.ok(out.questions.some((q) => !q.kind), 'generic slot questions are still added');
 });
+
+import { systemFor, SYSTEM as DESC_SYSTEM } from '../lib/describe.js';
+import { agentConfig } from '../lib/agents.js';
+
+test('S2: German adds a language rule, English leaves the prompt alone; agent language follows', () => {
+  assert.equal(systemFor('en'), DESC_SYSTEM);
+  assert.match(systemFor('de'), /in German/);
+  assert.equal(agentConfig('interviewer', { language: 'de' }).conversation_config.agent.language, 'de');
+  assert.equal(agentConfig('tutor').conversation_config.agent.language, 'en');
+});

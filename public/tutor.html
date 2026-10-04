@@ -28,11 +28,11 @@
   <p class="sub">Work through a real case on your own screen. The tutor explains each step in the expert's own words, asks what you would do next, and gently stops you before a mistake.</p></div>
 
   <div id="load" class="card">
-    <div class="row">
+    <div class="row load-row">
       <button id="load-sample" class="big">Try the sample invoice guide</button>
       <label class="hint">…or open a guide file <input id="load-file" type="file" accept="application/json,.json"></label>
     </div>
-    <div id="load-msg" class="hint" style="margin-top:6px"></div>
+    <div id="load-msg" class="hint"></div>
   </div>
 
   <div id="voice" class="card" data-state="idle" hidden role="status" aria-live="polite">
@@ -49,21 +49,24 @@
   </div>
 
   <div id="alert" class="card" hidden>
-    <h3 style="margin:0 0 6px">Stop: the expert would pause here</h3>
+    <h3>Stop: the expert would pause here</h3>
     <div id="alert-text"></div>
     <div id="alert-moment" class="hint"></div>
     <video id="replay" controls playsinline hidden></video>
   </div>
 
   <div id="plan" class="card" hidden>
-    <div class="row" style="justify-content:space-between"><h3 id="plan-title" style="margin:0"></h3><button id="start">● Start practising</button></div>
-    <ol id="steps" class="steps" style="margin-top:12px"></ol>
+    <div class="card-head"><h3 id="plan-title"></h3><button id="start">● Start practising</button></div>
+    <div class="live-options inline">
+    <label class="hint check"><input id="ocr-pii" type="checkbox"> Also find and black out IBANs, emails and phone numbers on screen automatically (slower)</label>
+    </div>
+    <ol id="steps" class="steps"></ol>
   </div>
 
   <div id="summary" class="card" hidden>
-    <h3 style="margin:0 0 8px">What you have mastered</h3>
+    <h3>What you have mastered</h3>
     <ul id="mastered"></ul>
-    <h3 style="margin:12px 0 8px">Practice next</h3>
+    <h3>Practice next</h3>
     <ul id="practice"></ul>
   </div>
 </main>

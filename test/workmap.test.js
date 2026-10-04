@@ -102,10 +102,11 @@ test('judgeTeachBack: a correction never counts as confirmation', async () => {
 });
 
 test('explainWorkMap rejects empty output', async () => {
-  await assert.rejects(explainWorkMap({ steps: [{ title: 't', guardrails: [] }] }, 'k', reply('{"text": ""}')), /empty/);
+  await assert.rejects(explainWorkMap({ steps: sanitizeWorkMap(raw, nodes).steps }, 'k', reply('{"text": ""}')), /empty/);
+  await assert.rejects(explainWorkMap({ steps: [{ title: 't', guardrails: [] }] }, 'k', reply('{"text": "x"}')), /not a Work Map/);
 });
 
-import { ensureGuardrailQuestion, FALLBACK_GUARDRAIL_QUESTION } from '../public/workmap.js';
+import { ensureGuardrailQuestion, FALLBACK_GUARDRAIL_QUESTION } from '../public/pacing.js';
 
 const seg = (id, questions, slots = {}) => ({ id, frames: ['a', 'b', 'c'], result: { questions, slots } });
 
@@ -129,4 +130,63 @@ test('ensureGuardrailQuestion falls back to the later segment on equal scores, a
   const segs = [seg(0, []), seg(1, [])];
   assert.equal(ensureGuardrailQuestion(segs), segs[1]);
   assert.equal(segs[1].result.questions[0].frame, 2);
+});
+
+test('G2: follow-ups the expert already answered live are dropped from unclear', () => {
+  const live = [{ id: 'n1', description: 'd', slots: {}, video_segment: { uri: 'v', t_start: 0, t_end: 3 },
+    answers: [{ question: 'Is there a limit on equipment invoices?', answer: 'Equipment over 5,000 euro is always capex.', t: 1 }] }];
+  const out = sanitizeWorkMap({ steps: [{ title: 't', source: ['n1'] }], unclear: [
+    { question: 'Is there a limit for equipment invoices?', why: 'x' },
+    { question: 'Is equipment over 5,000 euro always capex?', why: 'x' },
+    { question: 'Who approves a second approval?', why: 'x' },
+  ] }, live);
+  assert.deepEqual(out.unclear.map((u) => u.question), ['Who approves a second approval?']);
+  assert.equal(out.dropped.answered, 2);
+  assert.equal(out.enough_followups, false);
+});
+
+test('G2: proposeWorkMap regenerates once when too few follow-ups survive', async () => {
+  const mk = (qs) => JSON.stringify({ steps: raw.steps, unclear: qs.map((question) => ({ step: null, question, why: 'w' })) });
+  const replies = [mk(['Who decides here?']), mk(['Who decides here?', 'Is that every supplier?', 'What if the PO is missing?'])];
+  let n = 0;
+  const out = await proposeWorkMap({ nodes }, 'k', async () => ({ ok: true, json: async () => ({ content: [{ text: replies[n++] }] }) }));
+  assert.equal(n, 2);
+  assert.ok(out.unclear.length >= 3);
+});
+
+import { forget } from '../public/workmap.js';
+
+test('G7: forget removes a step, reason, guardrail or debrief answer and invalidates the teach-back', () => {
+  const { steps } = sanitizeWorkMap(raw, nodes);
+  const state = { steps, followups: [{ question: 'q', answer: 'secret' }], teachBack: { text: 't', confirmed: true } };
+  const noReason = forget(state, { part: 'reason', step: 's2' });
+  assert.equal(noReason.steps[1].reason, null);
+  assert.equal(noReason.steps[1].needs_reason, false);
+  assert.equal(noReason.teachBack, null);
+  assert.equal(forget(state, { part: 'guardrail', step: 's2', index: 0 }).steps[1].guardrails.length, 0);
+  assert.deepEqual(forget(state, { part: 'step', step: 's2' }).steps.map((s) => s.id), ['s1', 's3']);
+  assert.equal(forget(state, { followup: 0 }).followups[0].answer, null);
+  assert.equal(state.steps.length, 3); // input untouched
+});
+
+test('S2: a gloss travels with the German quote but never replaces it', () => {
+  const de = [{ id: 'n1', description: 'd', slots: {}, video_segment: { uri: 'v', t_start: 0, t_end: 3 }, answers: [{ question: 'Warum?', answer: 'Anlagen über 5.000 Euro sind immer Capex.', t: 1 }] }];
+  const { steps } = sanitizeWorkMap({ steps: [{ title: 't', source: ['n1'], decision: 'Book as capex', reason: { quote: 'Anlagen über 5.000 Euro sind immer Capex', gloss: 'Equipment over 5,000 euro is always capex.' } }] }, de);
+  assert.equal(steps[0].reason.words, 'Anlagen über 5.000 Euro sind immer Capex.');
+  assert.equal(steps[0].reason.gloss, 'Equipment over 5,000 euro is always capex.');
+});
+
+test('G13: a step worked in silence becomes a debrief question, and its answer links to the step', async () => {
+  const { silentQuestion } = await import('../public/workmap.js');
+  const first = sanitizeWorkMap(raw, nodes);
+  const q = first.unclear.find((u) => u.step === 's1');
+  assert.equal(q.question, silentQuestion(0));
+  assert.equal(first.unlinked, 2); // s1 and s3
+  assert.ok(first.unclear.filter((u) => u.why === 'nothing said during this step').length <= 2);
+
+  const again = sanitizeWorkMap(raw, nodes, [{ question: q.question, answer: 'I just check the supplier number first.' }]);
+  assert.equal(again.steps[0].said.words, 'I just check the supplier number first.');
+  assert.equal(again.steps[0].said.source, 'debrief');
+  assert.equal(again.unlinked, 1);
+  assert.ok(!again.unclear.some((u) => u.question === q.question));
 });

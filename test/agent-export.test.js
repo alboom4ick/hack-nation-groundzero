@@ -25,3 +25,25 @@ test('markdown lists every step and guardrail', () => {
   assert.match(md, /## Step 2: Code to cost center/);
   assert.match(md, /STOP AND ASK: No asset number/);
 });
+
+import { readFileSync } from 'node:fs';
+import { runAgent, exportCovers, UNSEEN_CASE, AGENT_SYSTEM } from '../lib/verify-export.js';
+
+const demo = JSON.parse(readFileSync(new URL('../public/workmaps/invoice_demo.json', import.meta.url)));
+
+test('S3: the demo export covers every guardrail and puts the stop-and-ask in the agent prompt', async () => {
+  assert.deepEqual(exportCovers(demo), { ok: true, missing: [] });
+  let sent;
+  const fake = async (url, init) => { sent = JSON.parse(init.body); return { ok: true, json: async () => ({ content: [{ text: '{"action":"stop_and_ask","step":4,"because":"No asset number"}' }] }) }; };
+  const out = await runAgent(demo, UNSEEN_CASE, 'k', fake);
+  assert.deepEqual(out, { action: 'stop_and_ask', step: 4, because: 'No asset number' });
+  assert.match(sent.system, /No asset number: do not book capex/);
+  assert.match(sent.system, /5,000 EUR/);
+  assert.match(sent.messages[0].content, /7200/);
+  assert.match(AGENT_SYSTEM, /stop_and_ask/);
+});
+
+test('S3: anything but an explicit proceed counts as stop_and_ask', async () => {
+  const fake = async () => ({ ok: true, json: async () => ({ content: [{ text: '{"action":"maybe"}' }] }) });
+  assert.equal((await runAgent(demo, UNSEEN_CASE, 'k', fake)).action, 'stop_and_ask');
+});
