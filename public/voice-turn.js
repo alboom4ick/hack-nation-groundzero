@@ -71,7 +71,7 @@ function agentVoice(agent, asker, builtin, { onState, onError }) {
       const said = await asker.ask(agent, teachback ? askCue(CONFIRM, 'teachback') : askCue(text, kind), { onListening: () => onState('listening') });
       return t.cancelled ? '' : redact(said);
     },
-    context: (text) => agent.context(text),
+    context: (text) => { asker.screen.record(text); agent.context(text); },
     cancel,
     close: () => { cancel(); agent.end(); },
   };

@@ -21,7 +21,9 @@ test('tutor prompt carries the Work Map: decisions, quotes, guardrails; first st
 test('every tool the prompts mention is registered, with a valid client-tool schema', () => {
   const names = (role) => TOOLS[role].map((t) => t.name);
   for (const n of ['set_step', 'record_prediction', 'hand_back', 'finish_lesson']) assert.ok(names('tutor').includes(n));
-  assert.deepEqual(names('interviewer'), ['question_done']);
+  assert.deepEqual(names('interviewer'), ['question_done', 'get_screen_state']);
+  assert.ok(names('tutor').includes('get_screen_state'));
+  assert.equal(TOOLS.tutor.find((t) => t.name === 'get_screen_state').expects_response, true, 'a pull tool must return its answer');
   assert.match(INTERVIEWER_PROMPT, /question_done/);
   for (const t of Object.values(TOOLS).flat()) {
     assert.equal(t.type, 'client');
@@ -55,7 +57,7 @@ test('createAgent registers each tool, then the agent with their ids; signedUrl 
   assert.equal(tools.length, TOOLS.tutor.length);
   const create = calls.at(-1);
   assert.match(create.url, /\/agents\/create$/);
-  assert.deepEqual(create.body.conversation_config.agent.prompt.tool_ids, ['tool_1', 'tool_2', 'tool_3', 'tool_4']);
+  assert.deepEqual(create.body.conversation_config.agent.prompt.tool_ids, ['tool_1', 'tool_2', 'tool_3', 'tool_4', 'tool_5']);
   assert.ok(calls.every((c) => c.key === 'KEY'));
   assert.equal(await signedUrl('agent 1', 'KEY', fetchImpl), 'wss://x');
   assert.match(calls.at(-1).url, /agent_id=agent%201$/);

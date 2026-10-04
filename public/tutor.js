@@ -3,6 +3,7 @@
 // natural pauses (or on demand) so a wrong decision is caught before it is saved.
 import * as voice from './voice.js';
 import { openAgent, agentAvailable } from './agent.js';
+import { createScreenLog } from './screen-log.js';
 import { builtinVoice } from './voice-turn.js';
 import { openScreenWatch } from './screen-watch.js';
 import { tutorPrompt, tutorCue } from './agent-prompts.js';
@@ -124,6 +125,8 @@ async function start() {
   const now = () => (performance.now() - s.t0) / 1000;
 
   // ElevenAgents plays the tutor when it has been set up; otherwise the scripted TTS loop below runs.
+  const screenLog = createScreenLog();
+  const seen = (obs, verdict) => { screenLog.record(obs); agent.context(tutorCue.screen(obs, verdict)); };
   let agent = null, pendingMute = false, finishing = false, summarySpoken = false, summaryCued = false;
   const agentMode = await agentAvailable('tutor');
   EXPERT = expertOf(workMap);
@@ -151,6 +154,7 @@ async function start() {
           },
           hand_back: () => { pendingMute = true; handBackSoon(); },
           finish_lesson: () => { pendingMute = true; finishing = true; },
+          get_screen_state: () => screenLog.state(),
         },
         onMessage: ({ source, message }) => {
           if (source === 'user') { s.said = message; $('voice-a').textContent = message; } else $('voice-q').textContent = message;
@@ -193,7 +197,7 @@ async function start() {
     showReplay(iv.t, step.screen_moment?.uri);
     if (agent) {
       agent.mute(false);
-      agent.context(tutorCue.screen(result.observed));
+      seen(result.observed);
       agent.cue(tutorCue.intervene(step, iv.words));
       s.lastCheck = now();
       handBackSoon();
@@ -224,7 +228,7 @@ async function start() {
       verdict = result.verdict;
       if (result.verdict === 'violation') await intervene(result);
       else if (agent) {
-        agent.context(tutorCue.screen(result.observed, result.verdict));
+        seen(result.observed, result.verdict);
         if (forced) {
           s.busy = true; agent.mute(false);
           agent.cue(tutorCue.say(CHECK_SPEECH[result.verdict] ?? CHECK_SPEECH.unsure));

@@ -1,12 +1,16 @@
 // One question at a time against an ElevenAgents agent whose mic is otherwise muted: unmute, cue it, collect what
 // the person says until the agent calls question_done (or the timeout fires), mute again. Shared by Capture and the
 // debrief so both have the same voice. Pure of DOM; the agent handle comes from agent.js.
+import { createScreenLog } from './screen-log.js';
+
 export function createAsker({ timeoutMs = 70000 } = {}) {
+  const screen = createScreenLog();
   let finish = null;
   let heard = [];
   return {
     // client tool + message hook to pass to openAgent
-    tools: { question_done: () => finish?.() },
+    tools: { question_done: () => finish?.(), get_screen_state: () => screen.state() },
+    screen, // record(text) feeds get_screen_state
     onMessage: ({ source, message }) => { if (source === 'user' && finish) heard.push(message); },
     get active() { return !!finish; },
     cancel: () => finish?.(),

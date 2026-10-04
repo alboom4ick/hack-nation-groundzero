@@ -8,7 +8,7 @@ export async function agentAvailable(role) {
   return !!status?.[role];
 }
 
-// tools: { name: async (params) => void }; the agent decides when to call them.
+// tools: { name: async (params) => string | void }; the agent decides when to call them; a returned string is the tool's answer.
 // Returns a handle: send a cue the agent answers (cue), add silent context (context), gate the mic (mute), end.
 export async function openAgent({ role, prompt, firstMessage, language, tools = {}, onMessage = () => {}, onMode = () => {}, onError = () => {} }) {
   const res = await fetch(`/api/agent/session?role=${role}`);
@@ -18,7 +18,7 @@ export async function openAgent({ role, prompt, firstMessage, language, tools = 
   const overrides = prompt || firstMessage != null || language ? { agent: { ...(prompt ? { prompt: { prompt } } : {}), ...(firstMessage != null ? { firstMessage } : {}), ...(language ? { language } : {}) } } : undefined;
   const conversation = await Conversation.startSession({
     signedUrl, connectionType: 'websocket', overrides,
-    clientTools: Object.fromEntries(Object.entries(tools).map(([name, fn]) => [name, async (p) => { await fn(p ?? {}); return 'ok'; }])),
+    clientTools: Object.fromEntries(Object.entries(tools).map(([name, fn]) => [name, async (p) => (await fn(p ?? {})) ?? 'ok'])),
     onMessage, onModeChange: ({ mode }) => onMode(mode), onError: (e) => onError(typeof e === 'string' ? e : e?.message ?? 'agent error'),
   });
   return {
