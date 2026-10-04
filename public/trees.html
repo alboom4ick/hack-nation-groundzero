@@ -33,6 +33,10 @@
   .add input { flex:1; min-width:160px; font:inherit; font-size:16px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; }
   .mini { min-height:0; padding:4px 10px; font-size:14px; border-radius:10px; }
   .tag { font-size:13px; font-weight:700; color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:1px 8px; }
+  .loading { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:16px; padding:8px 2px; }
+  .spinner { width:20px; height:20px; flex:none; border-radius:50%; border:3px solid var(--line); border-top-color:var(--accent); animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation:none; border-top-color:var(--line); border-right-color:var(--accent); } }
   #summary { color:var(--muted); font-size:16px; }
   #msg { min-height:1.5em; }
   button.danger { color:var(--rec); }
@@ -65,6 +69,12 @@
         <h2 id="tree-h" class="hint" style="font-size:16px"></h2>
         <ol id="branches" class="branches"></ol>
         <div class="toolbar"><input id="new-step" type="text" placeholder="Add a step of your own, e.g. Notify the buyer" aria-label="New step title"><button id="add-step" class="ghost">Add step</button></div>
+        <section id="videos" aria-labelledby="videos-h" style="margin-top:32px">
+          <h2 id="videos-h">Videos of this tree</h2>
+          <div class="toolbar"><input id="video-file" type="file" accept="video/webm,video/mp4,video/quicktime" aria-label="Video file"><button id="video-upload" class="ghost">Upload video</button></div>
+          <p id="video-msg" class="hint" role="status"></p>
+          <div id="video-list"></div>
+        </section>
       </div>
     </section>
   </div>

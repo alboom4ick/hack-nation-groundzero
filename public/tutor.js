@@ -8,6 +8,8 @@ import { builtinVoice } from './voice-turn.js';
 import { openScreenWatch } from './screen-watch.js';
 import { tutorPrompt, tutorCue } from './agent-prompts.js';
 import { readWorkMap } from './workmap.js';
+import { finalMap } from './tree-edit.js';
+import { listCustom } from './tree-store.js';
 import { answerSaves } from './save-hold.js';
 import { ocrEnabled, setOcrEnabled } from './ocr-redact.js';
 import { openIsland, closeIsland, dismissIsland } from './island.js';
@@ -76,6 +78,37 @@ $('load-file').addEventListener('change', async (ev) => {
   if (!f) return;
   try { setMap(JSON.parse(await f.text()), f.name); } catch { $('load-msg').textContent = 'Could not read that file as JSON.'; }
 });
+// Saved action trees (the database, or this browser when none is connected) in a temporary window that closes as
+// soon as one is chosen. A tree's switched-off branches are left out, so the tutor teaches the customized version.
+const treeDialog = $('tree-dialog');
+$('tree-open').addEventListener('click', async () => {
+  const list = $('tree-list'), note = $('tree-loading-text');
+  list.replaceChildren();
+  $('tree-loading').hidden = false;
+  note.textContent = 'Loading saved trees…';
+  treeDialog.showModal();
+  const slow = setTimeout(() => { note.textContent = 'Still loading. The database wakes up after being idle, which can take up to a minute.'; }, 4000);
+  try {
+    const trees = await listCustom();
+    if (!treeDialog.open) return;
+    if (!trees.length) { list.append(el('p', 'hint', 'No saved trees yet. Make one on the Action trees page.')); return; }
+    list.replaceChildren(...trees.map((t) => {
+      const b = el('button');
+      b.type = 'button';
+      b.append(el('b', '', t.name), el('span', '', `${t.draft.steps.length} steps · saved ${t.saved_at.slice(0, 10)}`));
+      b.addEventListener('click', () => {
+        treeDialog.close();
+        try { setMap(finalMap(t.draft), `the saved tree \u201c${t.name}\u201d`); } catch (err) { $('load-msg').textContent = `That tree cannot be taught: ${err.message}.`; }
+      });
+      return b;
+    }));
+    list.querySelector('button')?.focus();
+  } catch (err) {
+    list.replaceChildren(el('p', 'hint', `Could not load saved trees: ${err.message}`));
+  } finally { clearTimeout(slow); $('tree-loading').hidden = true; }
+});
+$('tree-close').addEventListener('click', () => treeDialog.close());
+treeDialog.addEventListener('click', (ev) => { if (ev.target === treeDialog) treeDialog.close(); });
 try {
   const saved = localStorage.getItem('groundzero.workmap');
   if (saved) setMap(JSON.parse(saved), 'the Work Map you just built');

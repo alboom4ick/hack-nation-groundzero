@@ -123,6 +123,11 @@
   </section>
 
   <video id="video" controls playsinline hidden></video>
+  <div id="video-save" class="row" hidden>
+    <label class="hint">Save this video to an action tree <select id="video-tree" aria-label="Action tree"></select></label>
+    <button id="video-save-go" class="ghost">Save video</button>
+    <span id="video-save-msg" class="hint" role="status" aria-live="polite">This is the raw screen recording; personal data on screen is not blacked out in it.</span>
+  </div>
   <div class="row"><progress id="bar" value="0" max="1" hidden></progress><span id="status" class="hint" role="status" aria-live="polite"></span></div>
 
   <h2 class="next-title" id="next-title" hidden>What would you like to do next?</h2>

@@ -1,6 +1,7 @@
 // Browse the action trees and customize their branches for one's own use case.
 import { readWorkMap, GUARDRAIL_KINDS } from './workmap.js';
 import * as E from './tree-edit.js';
+import { listVideos, uploadVideo, deleteVideo } from './video-store.js';
 import { listCustom, saveCustom, deleteCustom, backend } from './tree-store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -8,6 +9,7 @@ const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.crea
 const KIND = { limit: 'Limit', exception: 'Exception', stop_and_ask: 'Stop and ask' };
 
 let shared = [];          // [{ id, map }]
+let shownVideos;
 let cur = null;           // { id, draft, editable, saved }
 const flash = (t) => { $('msg').textContent = t; };
 
@@ -23,9 +25,17 @@ const pick = (name, sub, current, onClick) => {
   return b;
 };
 
+const loadingNote = (slow, label) => el('div', { className: 'loading', role: 'status' }, el('span', { className: 'spinner', ariaHidden: 'true' }), el('span', { textContent: slow ? 'Still loading. The database wakes up after being idle, which can take up to a minute.' : (label ?? 'Loading your versions…') }));
+
 async function renderLists() {
-  const mine = await listCustom();
   $('list-shared').replaceChildren(...shared.map((t) => pick(t.map.process.name, `${t.map.steps.length} steps · by ${t.map.process.expert ?? 'an expert'}`, cur?.id === t.id, () => open({ id: t.id, draft: E.startDraft(t.map, { baseId: t.id, name: t.map.process.name }), editable: false }))));
+  const first = !$('list-mine').querySelector('.pick');
+  if (first) $('list-mine').replaceChildren(loadingNote(false));
+  const slowTimer = setTimeout(() => { if (first) $('list-mine').replaceChildren(loadingNote(true)); }, 4000);
+  let mine;
+  try { mine = await listCustom(); }
+  catch (err) { clearTimeout(slowTimer); $('list-mine').replaceChildren(el('p', { className: 'hint', textContent: `Could not load your versions: ${err.message}` })); return; }
+  clearTimeout(slowTimer);
   $('list-mine').replaceChildren(...(mine.length ? mine.map((m) => pick(m.name, `from ${m.base?.name ?? 'a file'} · saved ${m.saved_at.slice(0, 10)}`, cur?.id === m.id, () => open({ id: m.id, draft: m.draft, editable: true, saved: true }))) : [el('p', { className: 'hint', textContent: 'None saved yet.' })]));
 }
 
@@ -43,7 +53,33 @@ function render() {
   const s = E.summarize(draft);
   $('summary').textContent = `${s.steps} step${s.steps === 1 ? '' : 's'} on, ${s.guardrails} guardrail${s.guardrails === 1 ? '' : 's'} on` + (s.stepsOff + s.guardrailsOff ? ` · ${s.stepsOff + s.guardrailsOff} switched off` : '') + (s.added ? ` · ${s.added} added by you` : '') + (editable && !cur.saved ? ' · not saved' : '');
   $('branches').replaceChildren(...draft.steps.map((st, i) => stepView(st, i, draft.steps.length, editable)));
+  if (shownVideos !== cur.id) { shownVideos = cur.id; renderVideos(); }
 }
+
+// Videos belong to a tree id: a shared tree's own id, or a saved version's id.
+async function renderVideos() {
+  const id = cur?.id, name = cur?.draft.video?.name;
+  $('videos').hidden = !cur;
+  $('video-upload').disabled = $('video-file').disabled = !id;
+  $('video-list').replaceChildren();
+  if (!id && !name) { $('video-msg').textContent = 'Save your version first, then its videos can be added.'; return; }
+  $('video-msg').textContent = id ? '' : 'Save your version to add more videos.';
+  $('video-list').replaceChildren(loadingNote(false, 'Loading videos…'));
+  try {
+    const vids = await listVideos(id, name);
+    if (cur?.id !== id) return;
+    $('video-list').replaceChildren(...(vids.length ? vids.map((v) => el('div', { className: 'branch' },
+      el('b', { textContent: v.name }), el('span', { className: 'hint', textContent: ` · ${(v.size / 1048576).toFixed(1)} MB · ${v.created_at.slice(0, 10)} ` }),
+      btn('Delete', async () => { await deleteVideo(v.id); renderVideos(); }, false, 'Delete video', 'danger'),
+      el('video', { src: v.url, controls: true, preload: 'metadata', style: 'display:block;max-width:100%;margin-top:8px;border-radius:12px' }))) : [el('p', { className: 'hint', textContent: 'No videos yet.' })]));
+  } catch (err) { $('video-list').replaceChildren(); $('video-msg').textContent = err.message; }
+}
+$('video-upload').onclick = async () => {
+  const f = $('video-file').files?.[0]; if (!f || !cur?.id) return;
+  $('video-msg').textContent = 'Uploading…'; $('video-upload').disabled = true;
+  try { await uploadVideo(cur.id, f, { name: f.name }); $('video-file').value = ''; await renderVideos(); }
+  catch (err) { $('video-msg').textContent = err.message; $('video-upload').disabled = false; }
+};
 
 function stepView(st, i, n, editable) {
   const head = el('div', { className: 'head' });
@@ -91,7 +127,7 @@ $('name').onchange = () => cur.editable && update((d) => E.setProcessName(d, $('
 $('add-step').onclick = () => { if ($('new-step').value.trim()) { update((d) => E.addStep(d, $('new-step').value)); $('new-step').value = ''; } };
 $('new-step').onkeydown = (e) => { if (e.key === 'Enter') $('add-step').click(); };
 $('save').onclick = async () => {
-  try { const rec = await saveCustom({ id: cur.id, draft: cur.draft }); cur.id = rec.id; cur.saved = true; flash(backend === 'database' ? 'Saved to the database.' : 'Saved in this browser only (no database connected).'); render(); renderLists(); } catch (err) { flash(err.message); }
+  try { const rec = await saveCustom({ id: cur.id, draft: cur.draft }); cur.id = rec.id; cur.saved = true; shownVideos = undefined; flash(backend === 'database' ? 'Saved to the database.' : 'Saved in this browser only (no database connected).'); render(); renderLists(); } catch (err) { flash(err.message); }
 };
 $('delete').onclick = async () => { await deleteCustom(cur.id); cur = null; render(); renderLists(); };
 $('download').onclick = () => {

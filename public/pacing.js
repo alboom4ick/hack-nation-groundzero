@@ -3,9 +3,9 @@
 // guardrail, and no more than three to five per ten minutes. Pure: callers pass the time and the pause state in.
 
 export const PACING = {
-  firstAskSec: 20,   // never ask in the first seconds
-  gapSec: 45,        // minimum spacing between live questions
-  catchUpGapSec: 20, // spacing until the required minimum has been asked
+  firstAskSec: 8,    // never ask in the first seconds
+  gapSec: 25,        // minimum spacing between live questions
+  catchUpGapSec: 6,  // spacing until the required minimum has been asked
   minQuestions: 3,   // required by the brief
   maxPer10Min: 5,    // the rest waits for the debrief
   maxOpenQuestions: 6, // "Answer open questions" after the task: the most important ones, not every queued one

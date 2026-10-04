@@ -12,8 +12,9 @@ import { openIsland, closeIsland, dismissIsland } from './island.js';
 // When the expert has paused is the screen watch's call (screen-watch.js); what to ask and how often is the
 // pacer's (pacing.js). These only shape the segments sent to the vision model.
 const T = {
-  segCloseSec: 2,       // a still screen this long closes the segment being collected
+  segCloseSec: 1,       // a still screen this long closes the segment being collected
   segMaxFrames: 3,
+  segMinPixels: 150,    // changed probe pixels summed over a segment; less is a blinking cursor or a clock, not an action
 };
 
 export { redact };
@@ -52,7 +53,7 @@ export async function startLive() {
 
   const s = session = {
     t0: performance.now(), pausedMs: 0, pausedAt: null, offRecord: false, busy: false, ended: false,
-    cur: { frames: [], frameTimes: [], active: false }, segments: [],
+    cur: { frames: [], frameTimes: [], active: false, pixels: 0 }, segments: [],
     describing: Promise.resolve(), context: [], narration: [],
   };
   const now = () => ((s.pausedAt ?? performance.now()) - s.t0 - s.pausedMs) / 1000;
@@ -93,8 +94,8 @@ export async function startLive() {
   const closeSegment = (force = false) => {
     const c = s.cur;
     if (c.frames.length < (force ? 1 : 2)) return;
-    s.cur = { frames: [], frameTimes: [], active: false };
-    if (!c.active) return; // nothing changed: nothing to describe
+    s.cur = { frames: [], frameTimes: [], active: false, pixels: 0 };
+    if (!c.active || c.pixels < T.segMinPixels) return; // nothing changed: nothing to describe
     const seg = { id: s.segments.length, tStart: c.frameTimes[0], tEnd: Math.max(now(), c.frameTimes.at(-1) + 0.5), frames: c.frames, frameTimes: c.frameTimes };
     s.segments.push(seg);
     s.describing = s.describing.then(async () => {
@@ -144,8 +145,8 @@ export async function startLive() {
     s.cur.frameTimes.push(t);
     if (s.cur.frames.length >= T.segMaxFrames) closeSegment();
   };
-  const onTick = ({ t, moved, idleFor, screenActive, voiceActive }) => {
-    if (moved) s.cur.active = true;
+  const onTick = ({ t, moved, changed = 0, idleFor, screenActive, voiceActive }) => {
+    if (moved) { s.cur.active = true; s.cur.pixels += changed; }
     if (idleFor >= T.segCloseSec && s.cur.frames.length >= 2) closeSegment();
     const next = pacer.next({ t, screenActive, voiceActive, idleFor });
     if (next?.ask) { ask(next.ask); return; }
@@ -161,7 +162,7 @@ export async function startLive() {
       turns.cancel();
       watch.pause();
       closeSegment(true);
-      s.cur = { frames: [], frameTimes: [], active: false };
+      s.cur = { frames: [], frameTimes: [], active: false, pixels: 0 };
       s.pausedAt = performance.now();
       rec.pause();
       voice.setState('private');

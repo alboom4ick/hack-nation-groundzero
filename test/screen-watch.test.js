@@ -56,14 +56,14 @@ test('pause detector: a few changed pixels are activity; the pause comes once th
   assert.equal(d.screen(still, 0), false, 'nothing to compare the first probe with');
   assert.equal(d.screen(caret, 1), false);
   assert.equal(d.screen(typed, 10), true);
-  assert.deepEqual([d.state(11).screenActive, d.state(11).paused], [true, false]);
-  assert.deepEqual([d.state(12.5).screenActive, d.state(12.5).paused], [false, true]);
+  assert.deepEqual([d.state(10.5).screenActive, d.state(10.5).paused], [true, false]);
+  assert.deepEqual([d.state(11).screenActive, d.state(11).paused], [false, true]);
   d.voice(0.5, 12.5);                                       // loud microphone, no Scribe: talking
-  assert.deepEqual([d.state(13).voiceActive, d.state(13).paused], [true, false]);
+  assert.deepEqual([d.state(12.8).voiceActive, d.state(12.8).paused], [true, false]);
   assert.equal(d.state(15).paused, true);
   d.reset(20);
   assert.equal(d.screen(still, 20.5), false, 'after a reset the old screen is forgotten');
-  assert.equal(d.state(21).screenActive, true, 'and the idle clock starts again');
+  assert.equal(d.state(20.5).screenActive, true, 'and the idle clock starts again');
 });
 
 test('the person is busy while the screen moves, and has paused once it is still and they are quiet', async () => {
@@ -105,8 +105,8 @@ test('without Scribe the microphone level decides, and the caller is told', asyn
   b.speakUp(0.3);
   assert.equal(at(5).voiceActive, true);
   b.speakUp(0);
-  assert.equal(at(6).voiceActive, true, 'still inside the quiet window');
-  assert.equal(at(8).voiceActive, false);
+  assert.equal(at(5.3).voiceActive, true, 'still inside the quiet window');
+  assert.equal(at(6).voiceActive, false);
 });
 
 test('frames go out every frameMs, masked first: regions, then OCR, then encode', async () => {

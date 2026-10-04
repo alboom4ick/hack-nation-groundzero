@@ -17,7 +17,7 @@ test('waits for the pause: never while the expert types or talks, and not in the
   assert.ok(p.next(paused(26)).ask);
   const early = createPacer();
   early.add(seg(0, 5, [q('Why?')]));
-  assert.equal(early.next(paused(8)).hold, 'later');
+  assert.equal(early.next(paused(PACING.firstAskSec - 2)).hold, 'later');
   assert.equal(createPacer().next(paused(60)), null, 'nothing to ask');
 });
 

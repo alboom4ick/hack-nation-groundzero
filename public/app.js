@@ -50,12 +50,38 @@ window.addEventListener('live:done', async ({ detail }) => {
   video.src = URL.createObjectURL(detail.blob);
   video.hidden = false;
   await fixDuration(video);
+  offerVideoSave(detail.blob);
+  autoSaveVideo(detail.blob);
   segments = detail.segments;
   narration = detail.narration ?? [];
   page = 0;
   render();
   $('status').textContent = `${segments.length} live segments · ${video.duration.toFixed(1)} s${detail.shortfall ? ` · ${detail.shortfall} Use "Answer open questions" below to cover the rest.` : ''}`;
 });
+
+// The recording goes to S3 as soon as the capture ends, named like the session, so any Work Map made from this
+// session finds its video on the trees page. Skipped quietly when video storage is not set up.
+async function autoSaveVideo(blob) {
+  const msg = $('video-save-msg');
+  try {
+    await uploadVideo('unassigned', blob, { name: videoName, duration: video.duration });
+    msg.textContent = 'Video saved. It shows up on the action tree made from this session.';
+  } catch (err) { msg.textContent = `Video not saved: ${err.message}`; }
+}
+
+// Save the recording to an action tree in S3, only when the expert asks: the recording is the raw screen.
+async function offerVideoSave(blob) {
+  const trees = [{ id: 'invoice_demo', name: 'Supplier invoices to cost centers (sample)' }, ...(await listCustom().catch(() => []))];
+  $('video-tree').replaceChildren(...trees.map((t) => new Option(t.name, t.id)));
+  $('video-save').hidden = false;
+  $('video-save-go').disabled = false;
+  $('video-save-go').onclick = async () => {
+    const msg = $('video-save-msg');
+    $('video-save-go').disabled = true; msg.textContent = 'Saving…';
+    try { await uploadVideo($('video-tree').value, blob, { name: videoName, duration: video.duration }); msg.textContent = 'Saved to the action tree.'; }
+    catch (err) { msg.textContent = err.message; $('video-save-go').disabled = false; }
+  };
+}
 
 function seek(v, t) {
   return new Promise((resolve) => {

@@ -21,8 +21,8 @@ export function createVoiceGate({ quietSec = 1.8 } = {}) {
 export const PAUSE = {
   pixelDelta: 60,   // summed RGB difference that counts as a changed pixel
   activePixels: 4,  // changed pixels that count as "something moved" (a caret or a few typed characters)
-  idleSec: 2.5,     // the screen must be still this long
-  quietSec: 1.8,    // and the person must not be talking
+  idleSec: 0.8,     // the screen must be still this long (short: a question that is ready is asked almost at once)
+  quietSec: 0.5,    // and the person must not be talking
   voiceLevel: 0.02, // microphone RMS that counts as speech when Scribe is not connected
 };
 
@@ -30,7 +30,7 @@ export const PAUSE = {
 export function createPauseDetector(opts = {}) {
   const o = { ...PAUSE, ...opts };
   const gate = createVoiceGate({ quietSec: o.quietSec });
-  let prev = null, lastActivity = 0;
+  let prev = null, lastActivity = 0, lastChanged = 0;
   return {
     gate,
     // pixels: RGBA bytes of a small probe of the screen. True when enough of it changed since the last probe.
@@ -42,10 +42,12 @@ export function createPauseDetector(opts = {}) {
         }
       }
       prev = pixels;
+      lastChanged = changed;
       if (changed < o.activePixels) return false;
       lastActivity = t;
       return true;
     },
+    get changed() { return lastChanged; }, // pixels that changed in the latest probe
     voice(level, t) { if (level > o.voiceLevel) gate.level(t); },
     // After a gap in watching (off the record): forget the old screen and start the idle clock again.
     reset(t) { prev = null; lastActivity = t; },

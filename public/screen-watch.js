@@ -117,13 +117,13 @@ export async function openScreenWatch({ display, pause: pauseOpts, env } = {}) {
       const at = epoch;
       grab().then((url) => { if (at === epoch) h.onFrame(url, t); }, (err) => h.onNotice(`Frame withheld, masking failed: ${err.message}`));
     }
-    h.onTick({ t, moved, ...detector.state(t) });
+    h.onTick({ t, moved, changed: detector.changed, ...detector.state(t) });
   };
 
   return {
     // now: () => seconds on the caller's session clock. busy: () => true while the apprentice itself has the floor
     // (ticks and the transcript are skipped). frames: also hand a masked frame to onFrame(url, t) every frameMs.
-    // onTick({ t, moved, idleFor, screenActive, voiceActive, paused }) runs every probeMs; onSaid(text, t) gets what
+    // onTick({ t, moved, changed, idleFor, screenActive, voiceActive, paused }) runs every probeMs; onSaid(text, t) gets what
     // the person said (redacted) each time they pause.
     async start({ now, language, frames = false, busy = () => false, onTick = () => {}, onFrame = () => {}, onSaid = () => {}, onNotice = () => {} }) {
       h = { now, language, frames, busy, onTick, onFrame, onSaid, onNotice };
