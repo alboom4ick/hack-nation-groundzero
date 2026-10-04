@@ -1,6 +1,7 @@
 // AR task page. A QR code opens /ar/?tx=<transaction id>; each transaction asks for a few simple actions
 // (keyboard sequence, hand gesture, taps) shown over the camera feed. Logic lives in tasks.js.
-import { stepsFor, describeStep, createKeyMatcher, createTapCounter, createHold, classifyHand, GESTURES } from './tasks.js';
+import { openAgent } from '../agent.js';
+import { CHAT_PROMPT, CHAT_FIRST_MESSAGE, stepsFor, describeStep, createTapCounter, colorShare, meanLuma, voicePhrase, phraseMatches, createHold, classifyHand, GESTURES } from './tasks.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e; };
@@ -17,8 +18,11 @@ const card = (instr, desc, cls = '') => { $('card').className = cls; $('card').r
 const setRing = (p, label) => { $('ring').hidden = p == null; if (p != null) { $('arc').style.strokeDashoffset = 276.5 * (1 - p); $('ring-label').textContent = label ?? ''; } };
 
 // ---- camera ----------------------------------------------------------------
+let facingNow = null;
 async function startCamera(facing) {
-  if (stream) return;
+  if (stream && facing === facingNow) return;
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null; facingNow = facing;
   if (!navigator.mediaDevices?.getUserMedia) return toast('Camera needs HTTPS. The task still works without it.');
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
@@ -42,22 +46,106 @@ async function loadLandmarker() {
 
 // ---- step runners: each returns a stop function and calls done() once ------
 const runners = {
-  keys(step, done) {
-    const m = createKeyMatcher(step.keys);
-    const caps = step.keys.map((k) => el('div', { className: 'key', textContent: k.toUpperCase() }));
-    const paint = () => caps.forEach((c, i) => { c.className = `key${i < m.index ? ' hit' : i === m.index ? ' next' : ''}`; });
-    $('keys').replaceChildren(...caps);
-    paint();
-    const onKey = (ev) => {
-      if (ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      const r = m.feed(ev.key);
-      paint();
-      if (r === 'wrong') card(describeStep(step), 'Wrong key, start again', 'bad');
-      else if (r === 'progress') card(describeStep(step), `${m.index} of ${m.total}`);
-      else if (r === 'done') done();
+  dark(step, done) {
+    let alive = true, raf = 0;
+    const hold = createHold('dark', 800);
+    const small = document.createElement('canvas');
+    small.width = small.height = 32;
+    const g = small.getContext('2d', { willReadFrequently: true });
+    card(describeStep(step), 'Make it dark, then hold it');
+    const video = $('cam');
+    const tick = () => {
+      if (!alive) return;
+      if (video.readyState >= 2) {
+        g.drawImage(video, 0, 0, 32, 32);
+        const p = hold.feed(meanLuma(g.getImageData(0, 0, 32, 32).data) < 25 ? 'dark' : null, performance.now());
+        setRing(p > 0 ? p : null, 'dark');
+        if (p >= 1) { alive = false; setRing(null); done(); return; }
+      }
+      raf = requestAnimationFrame(tick);
     };
-    addEventListener('keydown', onKey);
-    return () => { removeEventListener('keydown', onKey); $('keys').replaceChildren(); };
+    tick();
+    return () => { alive = false; cancelAnimationFrame(raf); setRing(null); };
+  },
+
+  // ElevenLabs reads a code (/api/tts), the person repeats it, ElevenLabs transcribes it (/api/stt).
+  voice(step, done) {
+    let alive = true, audio = null, mic = null, rec = null;
+    const phrase = voicePhrase(tx);
+    const stop = () => { alive = false; audio?.pause(); rec?.state === 'recording' && rec.stop(); mic?.getTracks().forEach((t) => t.stop()); setRing(null); };
+    const listen = async () => {
+      mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      rec = new MediaRecorder(mic);
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      const stopped = new Promise((r) => { rec.onstop = r; });
+      rec.start();
+      const t0 = performance.now();
+      while (alive && performance.now() - t0 < 5000) { setRing((performance.now() - t0) / 5000, 'speak'); await new Promise((r) => setTimeout(r, 100)); }
+      setRing(null);
+      rec.state === 'recording' && rec.stop();
+      await stopped;
+      mic.getTracks().forEach((t) => t.stop());
+      return new Blob(chunks, { type: rec.mimeType });
+    };
+    const run = async () => {
+      $('actions').replaceChildren(button('Skip', '', next));
+      try {
+        card(describeStep(step), 'Playing…');
+        const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: phrase }) });
+        if (!res.ok) throw new Error(`voice service ${res.status}`);
+        audio = new Audio(URL.createObjectURL(await res.blob()));
+        await new Promise((r) => { audio.onended = r; audio.onerror = r; audio.play().catch(r); });
+        if (!alive) return;
+        card(describeStep(step), `Now say the whole phrase: “${phrase}”`);
+        const blob = await listen();
+        if (!alive) return;
+        card(describeStep(step), 'Checking…');
+        const stt = await fetch('/api/stt', { method: 'POST', headers: { 'content-type': blob.type || 'audio/webm' }, body: blob });
+        if (!stt.ok) throw new Error(`transcription ${stt.status}`);
+        const { text } = await stt.json();
+        if (!alive) return;
+        if (phraseMatches(text, phrase)) { stop(); return done(); }
+        card(describeStep(step), `Heard “${text || '…'}”. Say the whole phrase: “${phrase}”`, 'bad');
+      } catch (err) {
+        if (!alive) return;
+        card('Voice step failed', `${err.message ?? err}. Try again or use Skip.`, 'bad');
+      }
+      $('actions').replaceChildren(button('Try again', 'primary', run), button('Skip', '', next));
+    };
+    card(describeStep(step), `You must say the whole phrase: “${phrase}”`);
+    $('actions').replaceChildren(button('Hear the phrase', 'primary', run), button('Skip', '', next));
+    return stop;
+  },
+
+  // An ElevenLabs agent asks what the person is doing, listens, then advises. Done after its second reply.
+  chat(step, done) {
+    let alive = true, agent = null, replies = 0, advised = false;
+    const finish = () => { if (!alive) return; stop(); done(); };
+    const stop = () => { alive = false; agent?.end().catch(() => {}); };
+    const start = async () => {
+      card(describeStep(step), 'Connecting…');
+      $('actions').replaceChildren(button('Skip', '', next));
+      try {
+        agent = await openAgent({
+          role: 'tutor', prompt: CHAT_PROMPT, firstMessage: CHAT_FIRST_MESSAGE,
+          onMessage: ({ source }) => { if (source === 'ai' && ++replies >= 2) advised = true; },
+          onMode: (mode) => {
+            if (!alive) return;
+            if (mode === 'speaking') card(describeStep(step), 'Assistant is talking…');
+            else if (advised) setTimeout(finish, 800);
+            else card(describeStep(step), 'Your turn: answer out loud');
+          },
+          onError: (msg) => { if (alive) card('Voice assistant failed', `${msg}. Use Skip.`, 'bad'); },
+        });
+        if (!alive) agent.end().catch(() => {});
+      } catch (err) {
+        if (alive) card('Voice assistant failed', `${err.message ?? err}. Use Skip.`, 'bad');
+      }
+    };
+    card(describeStep(step), 'Allow the microphone, then answer out loud');
+    $('actions').replaceChildren(button('Start', 'primary', start), button('Skip', '', next));
+    return stop;
   },
 
   tap(step, done) {
@@ -70,6 +158,31 @@ const runners = {
     };
     addEventListener('pointerdown', onTap);
     return () => removeEventListener('pointerdown', onTap);
+  },
+
+  color(step, done) {
+    let alive = true, raf = 0;
+    const hold = createHold(step.color, 800);
+    const small = document.createElement('canvas');
+    small.width = 96; small.height = 96;
+    const g = small.getContext('2d', { willReadFrequently: true });
+    card(describeStep(step), 'Hold the cap close to the camera');
+    const video = $('cam');
+    const tick = () => {
+      if (!alive) return;
+      if (video.readyState >= 2) {
+        // centre square of the frame, so the bottle you hold up counts and the fridge behind it mostly does not
+        const s = Math.min(video.videoWidth, video.videoHeight) * 0.6;
+        g.drawImage(video, (video.videoWidth - s) / 2, (video.videoHeight - s) / 2, s, s, 0, 0, 96, 96);
+        const share = colorShare(g.getImageData(0, 0, 96, 96).data, step.color);
+        const p = hold.feed(share >= 0.04 ? step.color : null, performance.now());
+        setRing(p > 0 ? p : null, step.color);
+        if (p >= 1) { alive = false; setRing(null); done(); return; }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => { alive = false; cancelAnimationFrame(raf); setRing(null); };
   },
 
   gesture(step, done) {
@@ -105,6 +218,7 @@ function runStep() {
   $('count').textContent = `Step ${stepIndex + 1} / ${steps.length}`;
   card(describeStep(step), tx ? `Transaction ${tx}` : '');
   $('actions').replaceChildren(button('Skip', '', next));
+  if (step.type !== 'voice' && step.type !== 'chat') startCamera(step.type === 'gesture' ? 'user' : 'environment');
   cleanup = runners[step.type](step, next);
 }
 
@@ -119,7 +233,6 @@ function next() {
 
 async function start() {
   stepIndex = 0;
-  await startCamera(steps.some((s) => s.type === 'gesture') ? 'user' : 'environment');
   runStep();
 }
 

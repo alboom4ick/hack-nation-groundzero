@@ -1,4 +1,5 @@
 import * as voice from './voice.js';
+import { attachIntents, intentAnswer } from './intent.js';
 import { startLive, openIsland, dismissIsland, fixDuration } from './live.js';
 import { toAgentInstructions, toAgentMarkdown } from './agent-export.js';
 import { LANGUAGES, getLanguage, setLanguage } from './language.js';
@@ -27,7 +28,7 @@ let videoName = 'video';
 
 function resetSession(name) {
   videoName = name;
-  narration = [];
+  narration = []; intents = [];
   $('workmap').hidden = true;
   debrief.reset();
   segments = [];
@@ -46,7 +47,7 @@ window.addEventListener('live:done', async ({ detail }) => {
   video.hidden = false;
   await fixDuration(video);
   segments = detail.segments;
-  narration = detail.narration ?? [];
+  narration = detail.narration ?? []; intents = detail.intents ?? [];
   page = 0;
   render();
   $('status').textContent = `${segments.length} live segments · ${video.duration.toFixed(1)} s${detail.shortfall ? ` · ${detail.shortfall} Use "Answer open questions" below to cover the rest.` : ''}`;
@@ -291,14 +292,16 @@ const OPTIONAL = new Set(['location', 'target']);
 
 // What the expert said unprompted while working (Scribe), kept as their own words for the step it was said in.
 let narration = [];
+let intents = []; // answers to "what are you about to do?", asked before the action (live.js)
 const saidDuring = (s) => narration.filter((n) => n.t >= s.tStart && n.t <= s.tEnd + 4).map((n) => ({ question: '(said while working)', answer: n.text, t: n.t }));
 
 function nodeInputs() {
+  const intentsBySegment = attachIntents(segments, intents);
   return segments.filter((s) => s.result).map((s) => ({
     id: `n${s.id + 1}`,
     description: s.result.description,
     slots: s.result.slots,
-    answers: [...s.result.questions.filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer, ...(Number.isFinite(q.answerT) ? { t: +q.answerT.toFixed(2) } : {}) })), ...saidDuring(s)],
+    answers: [...s.result.questions.filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer, ...(Number.isFinite(q.answerT) ? { t: +q.answerT.toFixed(2) } : {}) })), ...saidDuring(s), ...(intentsBySegment.get(s.id) ?? []).map(intentAnswer)],
     video_segment: { uri: videoName, t_start: +s.tStart.toFixed(2), t_end: +s.tEnd.toFixed(2) },
   }));
 }

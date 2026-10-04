@@ -7,6 +7,7 @@ import { getLanguage } from './language.js';
 import { redact } from './redact.js';
 import { screenContext } from './asker.js';
 import { createPacer } from './pacing.js';
+import { createIntentGate, INTENT_QUESTION, GO_AHEAD, INTRO_TEXT } from './intent.js';
 import { openIsland, closeIsland, dismissIsland } from './island.js';
 
 // When the expert has paused is the screen watch's call (screen-watch.js); what to ask and how often is the
@@ -28,11 +29,19 @@ const HOLD = { typing: 'question ready, waiting for you to stop typing', speakin
 
 export async function startLive() {
   if (session) return;
-  // Both prompts need the click's user activation, so start them together.
+  // The microphone is asked for first and the permission prompts come together, before anything is recorded.
+  const micP = navigator.mediaDevices.getUserMedia({ audio: true });
   const shareP = navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
   const islandP = openIsland();
-  let display;
+  let display, mic;
+  try { mic = await micP; } catch (err) {
+    shareP.then((d) => d.getTracks().forEach((t) => t.stop()), () => {});
+    closeIsland();
+    $('live-status').textContent = 'Microphone needed: ' + err.message;
+    return;
+  }
   try { display = await shareP; } catch (err) {
+    mic.getTracks().forEach((t) => t.stop());
     closeIsland();
     $('live-status').textContent = err.name === 'NotAllowedError' ? 'Screen sharing was cancelled.' : 'Could not share: ' + err.message;
     return;
@@ -40,7 +49,7 @@ export async function startLive() {
   await islandP;
   // The watch asks for the microphone, tells us when the expert is busy or has paused, and takes the masked frames.
   let watch;
-  try { watch = await openScreenWatch({ display }); } catch (err) {
+  try { watch = await openScreenWatch({ display, mic }); } catch (err) {
     $('live-status').textContent = err.message;
     return;
   }
@@ -53,10 +62,11 @@ export async function startLive() {
   const s = session = {
     t0: performance.now(), pausedMs: 0, pausedAt: null, offRecord: false, busy: false, ended: false,
     cur: { frames: [], frameTimes: [], active: false }, segments: [],
-    describing: Promise.resolve(), context: [], narration: [],
+    describing: Promise.resolve(), context: [], narration: [], intents: [],
   };
   const now = () => ((s.pausedAt ?? performance.now()) - s.t0 - s.pausedMs) / 1000;
   const pacer = createPacer();
+  const intentGate = createIntentGate();
 
   // ElevenAgents is the interviewer when set up, the built-in voice otherwise. Either way it never chimes in on
   // its own: our pause detector decides when, and only then is one question put to the expert.
@@ -76,6 +86,9 @@ export async function startLive() {
   el('island-status').hidden = false;
   el('island-rec').hidden = false;
   el('voice-skip').hidden = true;
+  // Tell the expert how this works before the first action, not after it.
+  el('voice-q').textContent = INTRO_TEXT;
+  try { voice.setState('speaking'); await voice.speak(INTRO_TEXT); } catch { /* text is on screen */ }
   voice.setState('watching');
 
   const showStatus = (screenActive, voiceActive, note) => {
@@ -138,6 +151,29 @@ export async function startLive() {
     }
   };
 
+  // Before the next action: "what are you about to do?" -> the plan, kept for the step that follows -> "go ahead".
+  const askIntent = async () => {
+    s.busy = true;
+    intentGate.began(now());
+    el('voice-q').textContent = INTENT_QUESTION;
+    el('voice-a').textContent = '';
+    try {
+      const said = await turns.ask(INTENT_QUESTION, { kind: 'intent' });
+      if (said && !s.ended) {
+        s.intents.push({ t: +now().toFixed(2), answer: said });
+        el('voice-a').textContent = said;
+        await turns.say?.(GO_AHEAD); // the built-in voice says it; the agent says it as part of its turn
+      }
+    } catch (err) {
+      el('voice-a').textContent = 'error: ' + err.message;
+    } finally {
+      intentGate.ended(now());
+      watch.spoke();
+      s.busy = false;
+      if (!s.ended) voice.setState(s.offRecord ? 'private' : 'watching');
+    }
+  };
+
   // ---- the loop: the watch ticks while the expert is on the record and the apprentice is not asking ----
   const onFrame = (url, t) => {
     s.cur.frames.push(url);
@@ -145,8 +181,9 @@ export async function startLive() {
     if (s.cur.frames.length >= T.segMaxFrames) closeSegment();
   };
   const onTick = ({ t, moved, idleFor, screenActive, voiceActive }) => {
-    if (moved) s.cur.active = true;
+    if (moved) { s.cur.active = true; intentGate.moved(); }
     if (idleFor >= T.segCloseSec && s.cur.frames.length >= 2) closeSegment();
+    if (!s.offRecord && intentGate.shouldAsk({ t, screenActive, voiceActive, idleFor })) { askIntent(); return; }
     const next = pacer.next({ t, screenActive, voiceActive, idleFor });
     if (next?.ask) { ask(next.ask); return; }
     showStatus(screenActive, voiceActive, next ? HOLD[next.hold] : '');
@@ -200,7 +237,7 @@ export async function startLive() {
     $('live-start').disabled = false;
     $('live-status').textContent = `Session captured: ${s.segments.length} segments. Use the tools below to build the Work Map.`;
     session = null;
-    window.dispatchEvent(new CustomEvent('live:done', { detail: { blob: new Blob(chunks, { type: 'video/webm' }), segments: s.segments, narration: s.narration, shortfall: pacer.shortfall() } }));
+    window.dispatchEvent(new CustomEvent('live:done', { detail: { blob: new Blob(chunks, { type: 'video/webm' }), segments: s.segments, narration: s.narration, intents: s.intents, shortfall: pacer.shortfall() } }));
   };
   // Stop is held behind a second click until the brief's minimum has been asked. Closing the shared window cannot
   // be held, so that path finishes at once.

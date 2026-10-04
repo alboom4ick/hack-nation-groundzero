@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stepsFor, captionFor, arUrl, createKeyMatcher, createTapCounter, createHold, classifyHand, TASKS, DEFAULT_STEPS } from '../public/ar/tasks.js';
+import { stepsFor, captionFor, arUrl, createTapCounter, classifyColor, colorShare, meanLuma, voicePhrase, phraseMatches, createHold, classifyHand, TASKS, DEFAULT_STEPS } from '../public/ar/tasks.js';
 import { INVOICES } from '../public/sandbox/data.js';
 
 test('every sandbox invoice has an AR task, and unknown ids fall back to taps', () => {
@@ -10,27 +10,12 @@ test('every sandbox invoice has an AR task, and unknown ids fall back to taps', 
 });
 
 test('caption says what to do, in order', () => {
-  assert.equal(captionFor(stepsFor('INV-4471')), 'Press U, then O, then P');
-  assert.equal(captionFor(stepsFor('INV-4473')), 'Hand: show an open hand → Hand: make a fist');
+  assert.equal(captionFor(stepsFor('INV-4471')), 'Cover the camera with your hand → Say the full phrase out loud');
+  assert.equal(captionFor(stepsFor('INV-4473')), 'Show a bottle with a yellow cap → Tell the voice assistant what you are doing');
 });
 
 test('QR url carries the transaction id', () => {
   assert.equal(arUrl('https://x.app/', 'INV-4471'), 'https://x.app/ar/?tx=INV-4471');
-});
-
-test('key matcher: U, O, P completes; a wrong key restarts', () => {
-  const m = createKeyMatcher(['u', 'o', 'p']);
-  assert.equal(m.feed('U'), 'progress');
-  assert.equal(m.feed('x'), 'wrong');
-  assert.equal(m.index, 0);
-  assert.deepEqual(['u', 'o', 'Shift', 'p'].map((k) => m.feed(k)), ['progress', 'progress', 'ignored', 'done']);
-});
-
-test('key matcher: a wrong key that is the first key counts as a fresh start', () => {
-  const m = createKeyMatcher(['u', 'o', 'p']);
-  m.feed('u');
-  assert.equal(m.feed('u'), 'progress');
-  assert.equal(m.index, 1);
 });
 
 test('tap counter resets after a pause', () => {
@@ -75,4 +60,34 @@ test('hold: needs a steady gesture, resets on any other frame', () => {
   assert.equal(h.feed(null, 400), 0);
   h.feed('fist', 500);
   assert.equal(h.feed('fist', 1100), 1);
+});
+
+test('cap colours: yellow and purple recognised, grey and dark ignored', () => {
+  assert.equal(classifyColor(240, 200, 20), 'yellow');
+  assert.equal(classifyColor(160, 60, 200), 'purple');
+  assert.equal(classifyColor(128, 128, 128), null);
+  assert.equal(classifyColor(40, 30, 10), null);
+  assert.equal(colorShare(Uint8ClampedArray.from([240, 200, 20, 255, 0, 0, 0, 255]), 'yellow'), 0.5);
+});
+
+test('only INV-4471 uses the scripted phrase; every other case ends with the agent chat', () => {
+  for (const [id, steps] of Object.entries(TASKS)) {
+    const last = id === 'INV-4471' ? 'voice' : 'chat';
+    assert.equal(steps.filter((s) => s.type === 'voice' || s.type === 'chat').length, 1, id);
+    assert.equal(steps.at(-1).type, last, id);
+  }
+});
+
+test('darkness: a covered lens reads dark, a lit scene does not', () => {
+  assert.ok(meanLuma(Uint8ClampedArray.from([5, 5, 5, 255, 10, 8, 6, 255])) < 25);
+  assert.ok(meanLuma(Uint8ClampedArray.from([200, 190, 180, 255])) > 100);
+});
+
+test('voice code: spoken digits or written digits both pass, wrong digits fail', () => {
+  const p = voicePhrase('INV-4471');
+  assert.equal(p, 'Approve invoice 4 4 7 1');
+  assert.ok(phraseMatches('Approve invoice four four seven one.', p));
+  assert.ok(phraseMatches('approve invoice 4471', p));
+  assert.ok(!phraseMatches('approve invoice 4472', p));
+  assert.ok(!phraseMatches('', p));
 });

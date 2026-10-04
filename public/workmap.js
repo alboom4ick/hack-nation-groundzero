@@ -16,7 +16,7 @@ export function wordPool(nodes, debrief = []) {
   const pool = [];
   for (const n of nodes) {
     for (const a of n.answers ?? []) {
-      if (a?.answer) pool.push({ text: a.answer, norm: norm(a.answer), asked: a.question ?? '', node: n.id, t: Number.isFinite(a.t) ? a.t : n.video_segment.t_start, source: 'live' });
+      if (a?.answer) pool.push({ text: a.answer, norm: norm(a.answer), asked: a.question ?? '', kind: a.kind, node: n.id, t: Number.isFinite(a.t) ? a.t : n.video_segment.t_start, source: 'live' });
     }
   }
   for (const d of debrief) {
@@ -65,6 +65,12 @@ function said(reason, guardrails, pool, sources, t) {
   return p ? { said: { words: p.text.trim().slice(0, 300), source: p.source, screen_moment: { t: p.t, node: p.node } } } : {};
 }
 
+// What the expert said they were about to do, asked before the action (intent turns in Capture).
+function intent(pool, sources) {
+  const p = pool.find((x) => x.kind === 'intent' && x.node && sources.includes(x.node));
+  return p ? { intent: { words: p.text.trim().slice(0, 300), screen_moment: { t: p.t, node: p.node } } } : {};
+}
+
 // LLM output is untrusted. Steps keep only known source nodes; quotes that are not the expert's
 // words are dropped (and counted) rather than shown as if the expert had said them.
 export function sanitizeWorkMap(raw, nodes, debrief = []) {
@@ -103,6 +109,7 @@ export function sanitizeWorkMap(raw, nodes, debrief = []) {
       needs_reason: !!decision && !hit,
       guardrails,
       ...said(hit, guardrails, pool, sources, t),
+      ...intent(pool, sources),
     });
   }
   steps.sort((a, b) => a.screen_moment.t - b.screen_moment.t).forEach((s, i) => { s.id = `s${i + 1}`; });
