@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPacer, PACING, FALLBACK_GUARDRAIL_QUESTION } from '../public/pacing.js';
+import { createPacer, PACING, FALLBACK_GUARDRAIL_QUESTION, selectOpenQuestions } from '../public/pacing.js';
 
 const seg = (id, tEnd, questions, slots = {}) => ({ id, tStart: tEnd - 3, tEnd, frames: ['a', 'b', 'c'], frameTimes: [tEnd - 3, tEnd - 1.5, tEnd], result: { description: 'd', slots, questions } });
 const q = (text, kind) => ({ frame: 0, text, ...(kind ? { kind } : {}) });
@@ -108,4 +108,14 @@ test('G12: a still screen keeps a question fresh while the minimum is missing; a
   const g = q2.next({ ...paused(90), idleFor: 60 });
   assert.equal(g.ask.q.kind, 'guardrail');
   assert.equal(g.ask.q.text, FALLBACK_GUARDRAIL_QUESTION);
+});
+
+test('selectOpenQuestions keeps guardrails and decisions first, caps the count, and returns video order', () => {
+  const it = (text, time, kind) => ({ s: {}, q: { text, kind }, time });
+  const items = [it('slot a', 1), it('slot b', 2), it('branch', 9, 'branch'), it('slot c', 3), it('guard', 7, 'guardrail'), it('slot d', 4)];
+  // top 3 by importance are the guardrail, the branch and the earliest slot question; they come back in video order
+  assert.deepEqual(selectOpenQuestions(items, 3).map((x) => x.q.text), ['slot a', 'guard', 'branch']);
+  assert.equal(selectOpenQuestions(items).length, 6);
+  assert.equal(selectOpenQuestions(items, 2).map((x) => x.q.text).includes('guard'), true);
+  assert.deepEqual(selectOpenQuestions([], 3), []);
 });

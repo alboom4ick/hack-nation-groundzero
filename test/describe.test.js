@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDescription, finalize, describeSegment, missingSlots } from '../lib/describe.js';
+import { parseDescription, finalize, describeSegment, missingSlots, MAX_QUESTIONS_PER_SEGMENT } from '../lib/describe.js';
 import { speak } from '../lib/tts.js';
 import { transcribe } from '../lib/stt.js';
 
@@ -74,10 +74,10 @@ test('transcribe posts multipart audio and returns trimmed text', async () => {
   assert.equal(form.get('model_id'), 'scribe_v2');
 });
 
-test('branch_question becomes a tagged question and does not suppress slot fallbacks', () => {
+test('branch_question becomes a tagged question; with a question already asked, no generic slot question is added', () => {
   const r = finalize(parseDescription(reply({ description: 'd', slots: { object: 'a', tool: 'b', intent: 'c', precondition: 'd', effect: null }, questions: [], branch_question: { frame: 1, text: "What if it isn't empty?" } }), 3));
-  assert.deepEqual(r.questions.map((q) => q.kind ?? 'slot'), ['slot', 'branch']);
-  assert.equal(r.questions[1].frame, 1);
+  assert.deepEqual(r.questions.map((q) => q.kind ?? 'slot'), ['branch']);
+  assert.equal(r.questions[0].frame, 1);
   assert.equal(finalize(parseDescription(reply({ description: 'd', slots: {}, questions: [], branch_question: null }))).questions.every((q) => q.kind !== 'branch'), true);
 });
 
@@ -88,7 +88,7 @@ test('guardrail_question becomes a question tagged kind=guardrail and does not c
   }), 2));
   const g = out.questions.find((q) => q.kind === 'guardrail');
   assert.deepEqual(g, { frame: 1, text: "Is there an amount where you'd stop?", kind: 'guardrail' });
-  assert.ok(out.questions.some((q) => !q.kind), 'generic slot questions are still added');
+  assert.deepEqual(out.questions.map((q) => q.kind), ['guardrail'], 'no generic slot questions are piled on');
 });
 
 import { systemFor, SYSTEM as DESC_SYSTEM } from '../lib/describe.js';
@@ -99,4 +99,24 @@ test('S2: German adds a language rule, English leaves the prompt alone; agent la
   assert.match(systemFor('de'), /in German/);
   assert.equal(agentConfig('interviewer', { language: 'de' }).conversation_config.agent.language, 'de');
   assert.equal(agentConfig('tutor').conversation_config.agent.language, 'en');
+});
+
+test('a routine step the model left without questions gets none, however many slots are empty', () => {
+  const r = finalize({ description: 'Scrolled the list', slots: { object: null, tool: null, intent: null, precondition: null, effect: null }, questions: [] });
+  assert.deepEqual(r.questions, []);
+  assert.equal(r.needsExpert, true, 'the missing slots are still reported');
+});
+
+test('a step that changed something gets one generic question, about the most important missing detail', () => {
+  const r = finalize({ description: 'x', slots: { object: null, tool: null, intent: null, precondition: null, effect: 'cost center changed' }, questions: [] });
+  assert.deepEqual(r.questions.map((q) => q.text), ['What is the intent in this step?']);
+});
+
+test('at most two questions per segment, a guardrail then a decision before a plain slot question', () => {
+  const r = finalize({
+    description: 'x', slots: { effect: 'e' },
+    questions: [{ frame: 0, text: 'plain 1' }, { frame: 0, text: 'plain 2' }, { frame: 0, text: 'decision?', kind: 'branch' }, { frame: 0, text: 'limit?', kind: 'guardrail' }],
+  });
+  assert.deepEqual(r.questions.map((q) => q.text), ['decision?', 'limit?'], 'kept in their original order');
+  assert.equal(r.questions.length, MAX_QUESTIONS_PER_SEGMENT);
 });

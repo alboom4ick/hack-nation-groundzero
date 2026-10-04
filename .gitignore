@@ -3,3 +3,7 @@ node_modules/
 .idea/
 .DS_Store
 .vercel
+infra/.terraform/
+infra/*.tfstate*
+infra/db.env
+infra/plan.out

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GroundZero · Action trees</title>
+<link rel="stylesheet" href="theme.css">
+<script type="module" src="a11y.js"></script>
+<style>
+  .lib { display:grid; grid-template-columns:minmax(260px,340px) 1fr; gap:24px; align-items:start; }
+  @media (max-width:860px) { .lib { grid-template-columns:1fr; } }
+  .lib h2 { font-size:20px; margin:0 0 8px; }
+  .pick { display:block; width:100%; text-align:left; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:8px; font:inherit; cursor:pointer; min-height:0; }
+  .pick[aria-current="true"] { border:2px solid var(--accent); background:var(--tint); }
+  .pick b { display:block; } .pick span { color:var(--muted); font-size:15px; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+  .toolbar input[type=text] { flex:1; min-width:200px; font:inherit; padding:8px 12px; border:1px solid var(--line); border-radius:10px; }
+  ol.branches { list-style:none; margin:0; padding:0; counter-reset:b; }
+  .branch { border:1px solid var(--line); border-radius:16px; background:var(--card); padding:12px 16px; margin-bottom:12px; }
+  .branch.off { opacity:.55; background:transparent; border-style:dashed; }
+  .branch .head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .branch .head input { flex:1; min-width:180px; font:700 18px/1.3 inherit; font-family:inherit; padding:6px 10px; border:1px solid transparent; border-radius:8px; background:transparent; }
+  .branch .head input:hover, .branch input:focus, .rail input:focus { border-color:var(--line); background:var(--surface); }
+  .branch .decision { margin:6px 0 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .branch .decision input { flex:1; min-width:180px; font:inherit; padding:6px 10px; border:1px solid transparent; border-radius:8px; background:transparent; }
+  .reason { color:var(--muted); font-size:15px; margin:4px 10px; font-style:italic; }
+  ul.rails { list-style:none; margin:8px 0 0 14px; padding:0 0 0 18px; border-left:2px solid var(--line); }
+  .rail { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:3px 0; }
+  .rail.off { opacity:.5; text-decoration:line-through; }
+  .rail input { flex:1; min-width:160px; font:inherit; font-size:16px; padding:4px 8px; border:1px solid transparent; border-radius:8px; background:transparent; }
+  .rail select, .add select { font:inherit; font-size:15px; padding:4px 6px; border-radius:8px; border:1px solid var(--line); }
+  .add { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 0 14px; padding-left:18px; }
+  .add input { flex:1; min-width:160px; font:inherit; font-size:16px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; }
+  .mini { min-height:0; padding:4px 10px; font-size:14px; border-radius:10px; }
+  .tag { font-size:13px; font-weight:700; color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:1px 8px; }
+  #summary { color:var(--muted); font-size:16px; }
+  #msg { min-height:1.5em; }
+  button.danger { color:var(--rec); }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><a class="pill" href="./">Capture</a><div id="a11y"></div></div></header>
+<main id="main">
+  <p class="eyebrow">Action trees</p>
+  <h1>Make it fit your work.</h1>
+  <p class="sub">Browse the trees that experts have captured, then switch off the branches you do not need, add your own, and save your version.</p>
+  <div class="lib">
+    <aside aria-label="Available trees">
+      <h2>Available trees</h2><div id="list-shared"></div>
+      <h2>My versions</h2><div id="list-mine"><p class="hint">None saved yet.</p></div>
+      <label class="hint">Open a Work Map file <input id="import" type="file" accept="application/json,.json"></label>
+    </aside>
+    <section aria-live="polite" aria-labelledby="tree-h">
+      <div id="empty" class="hint">Pick a tree on the left.</div>
+      <div id="editor" hidden>
+        <div class="toolbar">
+          <input id="name" type="text" aria-label="Name of your version">
+          <button id="customize" class="ghost" hidden>Customize a copy</button>
+          <button id="save" hidden>Save my version</button>
+          <button id="download" class="ghost">Download JSON</button>
+          <button id="delete" class="ghost danger" hidden>Delete</button>
+        </div>
+        <p id="summary"></p><p id="msg" class="hint" role="status"></p>
+        <h2 id="tree-h" class="hint" style="font-size:16px"></h2>
+        <ol id="branches" class="branches"></ol>
+        <div class="toolbar"><input id="new-step" type="text" placeholder="Add a step of your own, e.g. Notify the buyer" aria-label="New step title"><button id="add-step" class="ghost">Add step</button></div>
+      </div>
+    </section>
+  </div>
+</main>
+<script type="module" src="trees.js"></script>
+</body>
+</html>

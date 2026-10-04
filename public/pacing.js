@@ -8,6 +8,7 @@ export const PACING = {
   catchUpGapSec: 20, // spacing until the required minimum has been asked
   minQuestions: 3,   // required by the brief
   maxPer10Min: 5,    // the rest waits for the debrief
+  maxOpenQuestions: 6, // "Answer open questions" after the task: the most important ones, not every queued one
   freshSec: 45,      // a question about something older than this is no longer about what is on screen
   stillFreshSec: 180, // ...unless the screen has not changed since, and the required minimum is still missing
 };
@@ -32,6 +33,14 @@ export function ensureGuardrailQuestion(segments) {
   const pick = described.reduce((best, s) => (decisive(s) >= decisive(best) ? s : best));
   addFallback(pick);
   return pick;
+}
+
+// The questions worth asking on the recording: a guardrail first, then decisions, then missing details; at most
+// `max`. Returned in video order, so playback moves forward through them. items: [{ s, q, time }]
+export function selectOpenQuestions(items, max = PACING.maxOpenQuestions) {
+  const rank = (it) => (it.q.kind === 'guardrail' ? 0 : it.q.kind === 'branch' ? 1 : 2);
+  const keep = new Set([...items].sort((a, b) => rank(a) - rank(b) || a.time - b.time).slice(0, max));
+  return items.filter((it) => keep.has(it)).sort((a, b) => a.time - b.time);
 }
 
 export function createPacer(opts = {}) {

@@ -9,17 +9,50 @@
 <style>
   input[type=file] { width:100%; }
   progress { flex:1; min-width:120px; }
-  .seg { cursor:pointer; }
-  .seg:hover { border-color:var(--accent); }
-  .seg h3 { margin:0 0 8px; font-size:14px; }
-  .seg .meta { color:var(--muted); font-weight:400; }
+  .seg .meta { color:var(--muted); font-weight:400; font-size:14px; flex:none; }
+  details.seg { padding:0; margin-bottom:8px; }
+  details.seg > summary { display:flex; align-items:center; gap:12px; padding:10px 16px; min-height:56px; cursor:pointer; list-style:none; }
+  details.seg > summary::-webkit-details-marker { display:none; }
+  details.seg > summary::before { content:'▸'; color:var(--muted); flex:none; transition:transform .12s; }
+  details.seg[open] > summary::before { transform:rotate(90deg); }
+  details.seg > summary:hover { background:var(--tint); border-radius:inherit; }
+  details.seg > summary:focus-visible { outline:3px solid var(--accent); outline-offset:-3px; border-radius:inherit; }
+  .seg-thumb { height:36px; width:auto; border-radius:4px; flex:none; }
+  .seg-title { font-weight:700; flex:none; }
+  .seg-desc { flex:1; min-width:0; color:var(--muted); font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .seg-badge { flex:none; background:var(--tint); color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:2px 10px; font-size:13px; font-weight:700; }
+  .seg-body { padding:0 16px 16px; }
+  #viewbar { margin:16px 0 8px; gap:8px; }
+  #viewbar button { min-height:40px; padding:6px 16px; }
+  #viewbar button[aria-pressed="true"] { background:var(--fg); color:var(--bg); }
+  /* Segment tree */
+  .tree, .tree ul { list-style:none; margin:0; padding:0; }
+  .tree ul { margin-left:13px; padding-left:20px; border-left:2px solid var(--line); }
+  .tree li { position:relative; padding:3px 0; }
+  .tree ul > li::before { content:''; position:absolute; left:-20px; top:19px; width:16px; border-top:2px solid var(--line); }
+  .tree .trow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .tree button { background:transparent; color:var(--fg); border:0; min-height:0; padding:2px 6px; font:inherit; border-radius:6px; }
+  .tree button:hover:not(:disabled) { background:var(--tint); filter:none; }
+  .tree button:focus-visible { outline:3px solid var(--accent); outline-offset:1px; }
+  .tree .twist { width:28px; height:28px; padding:0; flex:none; color:var(--muted); text-align:center; }
+  .tree .twist.spacer { display:inline-block; }
+  .tree .lbl { text-align:left; }
+  .tree .lbl:disabled { opacity:1; cursor:default; }
+  .tree .tmeta { color:var(--muted); font-size:14px; }
+  .tree .ttext { margin:0 0 2px 34px; color:var(--muted); font-size:15px; }
+  .tree .kind-session > .trow .lbl { font-size:20px; font-weight:700; }
+  .tree .kind-step > .trow .lbl, .tree .kind-segment > .trow .lbl { font-weight:700; }
+  .tree .kind-question > .trow .lbl { font-weight:400; }
+  .tree .kind-answer > .trow .lbl { color:var(--accent); }
+  .tree .kind-answer > .trow .lbl::before { content:'↳ '; }
+  .tree li.current > .trow { background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; }
+  @media (max-width:560px) { .seg-desc, .seg-thumb { display:none; } details.seg > summary { flex-wrap:wrap; } }
   .strip { display:flex; gap:6px; overflow-x:auto; }
   .strip img { height:72px; border-radius:4px; flex:none; }
   .out { margin-top:10px; }
   .out p { margin:0 0 8px; }
   dl { display:grid; grid-template-columns:110px 1fr; gap:2px 12px; margin:0 0 8px; font-size:13px; }
   dt { color:var(--muted); } dd { margin:0; } dd.missing { color:var(--muted); font-style:italic; }
-  .seg { cursor:default; } .seg:hover { border-color:var(--line); }
   .q { border-top:1px solid var(--line); padding:6px 0; }
   .q.current { background:color-mix(in srgb, var(--accent) 10%, transparent); border-radius:6px; padding:6px; }
   .answer { color:var(--muted); font-size:13px; padding-top:2px; }
@@ -58,7 +91,7 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
-<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><div id="a11y"></div></div></header>
+<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><a class="pill" href="trees.html">Action trees</a><div id="a11y"></div></div></header>
 <main id="main">
   <div class="hero">
     <p class="eyebrow">Module 1 · Capture</p>
@@ -83,7 +116,6 @@
       </ul>
     </div>
     <div class="live-options">
-    <label class="hint field">I will speak <select id="lang" aria-label="Language you will speak"><option value="en">English</option></select></label>
     <label class="hint check"><input id="ocr-pii" type="checkbox"> Also find and black out IBANs, emails and phone numbers on screen automatically (slower)</label>
     </div>
     <button id="live-start" class="big">● Start showing my work</button>
@@ -97,6 +129,7 @@
 <div id="tools" class="row" hidden>
     <button id="build-map">Build the Work Map</button>
     <button id="voice-start" class="ghost">🎙 Answer open questions</button>
+    <button id="toggle-all" class="ghost">Expand all segments</button>
   </div>
   <div id="workmap" class="card" hidden>
     <div class="card-head"><h3>Work Map</h3><span class="row"><button id="teach-map">Teach it to a new hire →</button><button id="download-map" class="ghost">Download Work Map</button><button id="download-agent" class="ghost" title="Steps and guardrails an AI agent can load">Export for an agent</button></span></div>
@@ -108,15 +141,11 @@
       <p id="teachback"></p>
     </div>
   </div>
-  <details id="compare" class="card">
-    <summary><b>Two experts, one task</b> <span class="hint">compare two Work Maps</span></summary>
-    <div class="row cmp-row">
-      <label class="hint">Expert A <input id="cmp-a" type="file" accept="application/json,.json"></label>
-      <label class="hint">Expert B <input id="cmp-b" type="file" accept="application/json,.json"></label>
-      <button id="cmp-go" class="ghost">Compare</button>
-    </div>
-    <div id="cmp-out" class="out" role="status" aria-live="polite"></div>
-  </details>
+  <div id="viewbar" class="row" hidden>
+    <span class="hint">Segments</span>
+    <button id="view-list" class="ghost" aria-pressed="true">List</button>
+    <button id="view-tree" class="ghost" aria-pressed="false">Tree</button>
+  </div>
   <div id="segments"></div>
   <div id="pager" class="row" hidden>
     <button id="prev" class="ghost">Previous</button>

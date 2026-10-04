@@ -5,11 +5,12 @@ import { LANGUAGES, getLanguage, setLanguage } from './language.js';
 import { ocrEnabled, setOcrEnabled } from './ocr-redact.js';
 import { openInterviewerVoice, builtinVoice } from './voice-turn.js';
 import { compareWorkMaps } from './compare.js';
-import { ensureGuardrailQuestion } from './pacing.js';
+import { ensureGuardrailQuestion, selectOpenQuestions } from './pacing.js';
+import { buildSegmentTree, renderSegmentTree } from './seg-tree.js';
 import { createDebrief } from './debrief.js';
 import { readWorkMap } from './workmap.js';
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 10; // segment rows are collapsed, so a page can hold more
 
 // The voice panel may be floating in a Picture-in-Picture window; byId finds it wherever it is.
 const $ = voice.byId;
@@ -23,6 +24,10 @@ async function readJson(res) {
 const video = $('video');
 let segments = [];
 let page = 0;
+// How the segments are shown: 'list' (collapsed rows) or 'tree' (session > step > segment > question > answer).
+let view = (() => { try { return localStorage.getItem('groundzero.segview') === 'tree' ? 'tree' : 'list'; } catch { return 'list'; } })();
+const treeState = new Map(); // expand state of tree nodes, keyed by path
+const workMapSteps = () => { try { return debrief.steps; } catch { return []; } }; // debrief is declared further down
 let videoName = 'video';
 
 function resetSession(name) {
@@ -63,7 +68,19 @@ function render() {
   const pages = Math.max(1, Math.ceil(segments.length / PAGE_SIZE));
   page = Math.min(Math.max(page, 0), pages - 1);
   const slice = segments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  $('segments').replaceChildren(...slice.map(segmentCard));
+  if (view === 'tree') {
+    const tree = buildSegmentTree({ name: videoName, segments, steps: workMapSteps(), currentQ });
+    $('segments').replaceChildren(renderSegmentTree(tree, {
+      isOpen: (path, dflt) => (treeState.has(path) ? treeState.get(path) : dflt),
+      setOpen: (path, open) => { treeState.set(path, open); render(); },
+      onSeek: (t) => { video.pause(); video.currentTime = t; },
+    }));
+  } else {
+    $('segments').replaceChildren(...slice.map(segmentCard));
+  }
+  $('viewbar').hidden = !segments.length;
+  for (const v of ['list', 'tree']) $(`view-${v}`).setAttribute('aria-pressed', String(view === v));
+  $('toggle-all').hidden = view === 'tree';
 
   $('tools').hidden = !segments.length;
   $('next-title').hidden = !segments.length;
@@ -72,22 +89,32 @@ function render() {
     li[0]?.classList.replace('now', 'done'); li[0]?.removeAttribute('aria-current');
     li[1]?.classList.add('now'); li[1]?.setAttribute('aria-current', 'step');
   }
-  $('pager').hidden = pages <= 1;
+  syncToggleAll();
+  $('pager').hidden = view === 'tree' || pages <= 1;
   $('prev').disabled = page === 0;
   $('next').disabled = page === pages - 1;
   $('pageinfo').textContent = `Page ${page + 1} of ${pages} · segments ${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + slice.length} of ${segments.length}`;
 }
 
+// A collapsed row (thumbnail, number, time, one-line description, open questions); the frames and tools open on click.
 function segmentCard(s) {
-  const el = document.createElement('div');
+  const el = document.createElement('details');
   el.className = 'card seg';
   el.id = `seg-${s.id}`;
-  const title = document.createElement('h3');
-  title.textContent = `Segment ${s.id + 1} `;
-  const meta = document.createElement('span');
-  meta.className = 'meta';
-  meta.textContent = `${s.tStart.toFixed(1)}–${s.tEnd.toFixed(1)} s · ${s.frames.length} frames`;
-  title.append(meta);
+  el.open = !!s.open;
+  el.addEventListener('toggle', () => { s.open = el.open; syncToggleAll(); });
+
+  const sum = document.createElement('summary');
+  const thumb = Object.assign(document.createElement('img'), { className: 'seg-thumb', src: s.frames[0], alt: '', loading: 'lazy' });
+  const title = Object.assign(document.createElement('span'), { className: 'seg-title', textContent: `Segment ${s.id + 1}` });
+  const meta = Object.assign(document.createElement('span'), { className: 'meta', textContent: `${s.tStart.toFixed(1)}–${s.tEnd.toFixed(1)} s · ${s.frames.length} frames` });
+  const desc = Object.assign(document.createElement('span'), { className: 'seg-desc', textContent: s.result?.description ?? 'Not described yet' });
+  sum.append(thumb, title, meta, desc);
+  const openQs = (s.result?.questions ?? []).filter((q) => !q.answer).length;
+  if (openQs) sum.append(Object.assign(document.createElement('span'), { className: 'seg-badge', textContent: `${openQs} question${openQs === 1 ? '' : 's'}` }));
+
+  const body = document.createElement('div');
+  body.className = 'seg-body';
   const strip = document.createElement('div');
   strip.className = 'strip';
   s.frames.forEach((src, i) => {
@@ -109,10 +136,20 @@ function segmentCard(s) {
   const actions = document.createElement('div');
   actions.className = 'row';
   actions.append(jump, describe);
-  el.append(title, strip, actions, out);
+  body.append(strip, actions, out);
+  el.append(sum, body);
   if (s.result) showResult(s, out);
   return el;
 }
+
+function syncToggleAll() {
+  $('toggle-all').textContent = segments.length && segments.every((s) => s.open) ? 'Collapse all segments' : 'Expand all segments';
+}
+$('toggle-all').addEventListener('click', () => {
+  const openAll = !segments.every((s) => s.open);
+  segments.forEach((s) => { s.open = openAll; });
+  render();
+});
 
 async function describeSeg(s) {
   const res = await fetch('/api/describe', {
@@ -130,7 +167,8 @@ async function runDescribe(s, btn, out) {
   out.textContent = 'Claude is looking at the frames…';
   try {
     await describeSeg(s);
-    showResult(s, out);
+    s.open = true; // show what Claude said
+    render();
   } catch (err) {
     out.textContent = 'failed: ' + err.message;
   } finally {
@@ -221,6 +259,7 @@ function showQuestion(item) {
   currentQ = item.q;
   const idx = segments.indexOf(item.s);
   page = Math.floor(idx / PAGE_SIZE);
+  item.s.open = true; // the question being asked is in this segment
   render();
   document.getElementById(`seg-${item.s.id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
@@ -243,7 +282,7 @@ async function moveTo(t, follow) {
 
 async function startVoice() {
   ensureGuardrailQuestion(segments);
-  const queue = buildQueue();
+  const queue = selectOpenQuestions(buildQueue());
   if (!queue.length) { $('status').textContent = 'Describe the segments first — no open questions.'; return; }
   run = { cancelled: false, skip: false };
   turns = builtinVoice(voice, { onState: voice.setState });
@@ -276,11 +315,20 @@ async function startVoice() {
     voice.setState('idle');
     currentQ = null;
     video.pause();
+    const wasCancelled = run?.cancelled;
     run = null;
     turns = null;
     render();
-    $('voice-q').textContent = buildQueue().length ? 'Stopped.' : 'All questions answered.';
+    $('voice-q').textContent = wasCancelled ? 'Stopped.' : 'Done. The rest are saved for the debrief.';
   }
+}
+
+for (const v of ['list', 'tree']) {
+  $(`view-${v}`).addEventListener('click', () => {
+    view = v;
+    try { localStorage.setItem('groundzero.segview', v); } catch { /* storage blocked: the choice lasts for this page only */ }
+    render();
+  });
 }
 
 $('prev').addEventListener('click', () => { page--; render(); });
@@ -490,9 +538,12 @@ $('download-agent').addEventListener('click', () => {
 });
 
 // S2: the expert picks the language they speak; the tutor stays in English.
-$('lang').replaceChildren(...Object.entries(LANGUAGES).map(([code, name]) => new Option(name, code)));
-$('lang').value = getLanguage();
-$('lang').addEventListener('change', () => setLanguage($('lang').value));
+const langSelect = $('lang'); // absent when the page has no language picker
+if (langSelect) {
+  langSelect.replaceChildren(...Object.entries(LANGUAGES).map(([code, name]) => new Option(name, code)));
+  langSelect.value = getLanguage();
+  langSelect.addEventListener('change', () => setLanguage(langSelect.value));
+}
 
 // A5: areas of the shared screen that are painted over before any frame is analysed.
 
@@ -504,7 +555,7 @@ async function readMap(input) {
   try { map = readWorkMap(JSON.parse(await f.text())); } catch (err) { throw new Error(`${f.name}: ${err.message}`); }
   return { map, name: f.name.replace(/\.work-map\.json$|\.json$/, '') };
 }
-$('cmp-go').addEventListener('click', async () => {
+$('cmp-go')?.addEventListener('click', async () => { // absent when the page has no Compare section
   const out = $('cmp-out');
   out.replaceChildren();
   try {

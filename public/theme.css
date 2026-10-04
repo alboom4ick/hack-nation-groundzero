@@ -166,9 +166,6 @@ ol.steps .tstep, #map-steps .mstep { margin:0; padding:10px 0 10px 20px; }
 #debrief { border-top:1px solid var(--line); margin-top:28px; padding-top:24px; display:grid; gap:12px; }
 #debrief p { margin:0; }
 #debrief-open:empty, #teachback:empty { display:none; }
-.cmp-row { margin-top:16px; gap:16px 24px; }
-#compare summary { margin:0; padding:4px 0; }
-#compare[open] summary { margin-bottom:8px; }
 #tools { margin:0 0 32px; gap:16px; }
 #alert h3, #summary h3 { margin:0 0 12px; }
 #summary ul { margin:0 0 20px; padding-left:24px; display:grid; gap:6px; }
