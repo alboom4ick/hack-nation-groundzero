@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Transaction QR codes (AR tasks)</title>
+<style>
+  body { margin:0; font:15px/1.4 system-ui, sans-serif; color:#1b2430; background:#f4f6f9; }
+  h1 { font-size:18px; margin:0; padding:14px 20px; background:#16263d; color:#fff; }
+  p.note { margin:12px 20px; color:#566; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; padding:0 20px 20px; }
+  figure { margin:0; padding:14px; background:#fff; border:1px solid #d5dbe3; border-radius:8px; text-align:center; }
+  figure svg, figure img { width:100%; max-width:200px; height:auto; }
+  figcaption b { display:block; font-size:16px; }
+  figcaption span { display:block; font-size:13px; color:#566; margin-top:2px; }
+  figcaption code { display:block; margin-top:6px; padding:4px 6px; background:#fff7cc; border-radius:4px; font-size:13px; }
+  @media print { body { background:#fff; } p.note { display:none; } }
+</style>
+</head>
+<body>
+<h1>Transaction QR codes · AR tasks</h1>
+<p class="note">Scan with a phone camera or the in-page scanner at <a href="/ar/">/ar/</a>. The line under each code is the task, printed for testing.</p>
+<div class="grid" id="grid"></div>
+<script type="module">
+  import { qrcode } from './vendor/qrcode.js';
+  import { INVOICES } from '../sandbox/data.js';
+  import { stepsFor, captionFor, arUrl } from './tasks.js';
+  const grid = document.getElementById('grid');
+  for (const inv of INVOICES) {
+    const url = arUrl(location.origin, inv.id);
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    const fig = document.createElement('figure');
+    fig.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    const cap = document.createElement('figcaption');
+    const b = document.createElement('b'); b.textContent = inv.id;
+    const s = document.createElement('span'); s.textContent = inv.supplier;
+    const c = document.createElement('code'); c.textContent = captionFor(stepsFor(inv.id));
+    cap.append(b, s, c);
+    fig.append(cap);
+    grid.append(fig);
+  }
+</script>
+</body>
+</html>

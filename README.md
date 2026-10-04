@@ -166,3 +166,7 @@ Deploy: `vercel deploy --prod`. `api/index.js` runs the same handler (`lib/app.j
 ## 10. Out of scope (deliberately removed)
 
 Anything not required by the brief was cut so the pitch stays Capture → Map → Teach: mobile AR workflow player, physical-task vocabulary, uploaded-video mode, the standalone BPMN action-tree editor (its useful part became the agent-ready export, S3).
+
+## AR task per transaction (QR)
+
+Each sandbox transaction has a QR code (`/ar/qr.html`, linked from the sandbox header). Scanning it opens `/ar/?tx=<invoice id>`, which shows simple actions over the camera feed: a key sequence (U, O, P), a hand gesture (fist, open hand, thumbs up; MediaPipe hand tracking, loaded from a CDN on first use) or taps. The task per invoice is in `public/ar/tasks.js` and printed under each QR for testing. The camera needs HTTPS (the Vercel deploy) or localhost; the key task needs a hardware keyboard. Gesture thresholds are untested on a real camera.

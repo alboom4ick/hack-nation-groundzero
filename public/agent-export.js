@@ -10,6 +10,7 @@ export function toAgentInstructions(workMap) {
     n: i + 1,
     id: s.id,
     title: s.title,
+    expert_intends: s.intent?.words ?? null, // what the expert said they were about to do, before doing it
     decide: s.decision ?? null,
     because: s.reason?.words ?? null,
     guardrails: s.guardrails.map((g) => ({ kind: KIND[g.kind] ?? g.kind, rule: g.rule, expert_words: g.words })),
@@ -36,6 +37,7 @@ export function toAgentMarkdown(workMap) {
   const out = [`# ${doc.process}`, '', ...doc.rules.map((r) => `- ${r}`), ''];
   for (const s of doc.steps) {
     out.push(`## Step ${s.n}: ${s.title}`, `Step id: ${s.id}`);
+    if (s.expert_intends) out.push(`Expert said before doing it: "${s.expert_intends}"`);
     if (s.decide) out.push(`Decide: ${s.decide}`);
     if (s.because) out.push(`Because (expert): "${s.because}"`);
     for (const g of s.guardrails) out.push(`- ${g.kind.replaceAll('_', ' ').toUpperCase()}: ${g.rule} ("${g.expert_words}")`);

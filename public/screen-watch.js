@@ -52,10 +52,11 @@ const browser = () => ({
 
 // display: the MediaStream from getDisplayMedia (the caller keeps it, e.g. to record it, and stops it).
 // Asks for the microphone; throws "Microphone needed: ..." (and ends the share) when it is refused.
-export async function openScreenWatch({ display, pause: pauseOpts, env } = {}) {
+// mic: a microphone stream the caller already asked for (so the permission prompt came first); else asked here.
+export async function openScreenWatch({ display, mic: given, pause: pauseOpts, env } = {}) {
   const e = { ...browser(), ...env };
   let mic;
-  try { mic = await e.mic(); } catch (err) {
+  try { mic = given ?? await e.mic(); } catch (err) {
     display.getTracks().forEach((t) => t.stop());
     throw new Error('Microphone needed: ' + err.message);
   }
