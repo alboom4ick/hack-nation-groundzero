@@ -9,17 +9,17 @@ import {S4Map, S4_FRAMES} from './scenes/S4Map';
 import {S5Teach, S5_FRAMES} from './scenes/S5Teach';
 import {S6Agent, S6_FRAMES} from './scenes/S6Agent';
 
-// Each clip lasts as long as its voice-over (how-it-works/narration.json, see voice.mjs) plus a short tail.
+// Each clip lasts as long as its voice-over (how-it-works/narration.json, see voice.mjs) plus a 0.35 s tail.
 // `frames` is the real length; the scene itself is designed for its own S*_FRAMES and gets stretched to fit.
 const clip = (id: string, Scene: React.FC, design: number, frames: number) => ({id, component: withSpeed(Scene, design / frames), frames});
 
 export const SCENES = [
-  clip('S1Expert', S1Expert, S1_FRAMES, 356),
-  clip('S2Screen', S2Screen, S2_FRAMES, 331),
-  clip('S3Paper', S3Paper, S3_FRAMES, 310),
-  clip('S4Map', S4Map, S4_FRAMES, 413),
-  clip('S5Teach', S5Teach, S5_FRAMES, 347),
-  clip('S6Agent', S6Agent, S6_FRAMES, 433),
+  clip('S1Expert', S1Expert, S1_FRAMES, 210),
+  clip('S2Screen', S2Screen, S2_FRAMES, 199),
+  clip('S3Paper', S3Paper, S3_FRAMES, 239),
+  clip('S4Map', S4Map, S4_FRAMES, 222),
+  clip('S5Teach', S5Teach, S5_FRAMES, 214),
+  clip('S6Agent', S6Agent, S6_FRAMES, 250),
 ];
 
 export const Root: React.FC = () => (

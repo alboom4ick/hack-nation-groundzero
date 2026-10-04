@@ -313,4 +313,8 @@ We would rather say this plainly than let a judge find it.
 
 ## AR task per transaction (QR)
 
-Each sandbox transaction has a QR code (`/ar/qr.html`, linked from the sandbox header). Scanning it opens `/ar/?tx=<invoice id>`, which shows simple actions over the camera feed: a key sequence (U, O, P), a hand gesture (fist, open hand, thumbs up; MediaPipe hand tracking, loaded from a CDN on first use) or taps. The task per invoice is in `public/ar/tasks.js` and printed under each QR for testing. The camera needs HTTPS (the Vercel deploy) or localhost; the key task needs a hardware keyboard. Gesture thresholds are untested on a real camera.
+Each sandbox transaction has a QR code (`/ar/qr.html`, linked from the sandbox header). Scanning it opens `/ar/?tx=<invoice id>`, which shows a few actions: a spoken phrase (INV-4471), a bottle with a coloured cap (INV-4472) or hand movements (fist, open hand, thumbs up; MediaPipe hand tracking, loaded from a CDN on first use; INV-4473, INV-4475). Every task ends with a short chat with an ElevenLabs voice agent that comments on what the person is doing. Unknown ids fall back to taps. The task per invoice is in `public/ar/tasks.js` and printed under each QR for testing. The camera needs HTTPS (the Vercel deploy) or localhost; Gesture thresholds are untested on a real camera.
+
+## License
+
+[MIT](LICENSE)

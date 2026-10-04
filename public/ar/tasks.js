@@ -14,13 +14,13 @@ const gesture = (g) => ({ type: 'gesture', gesture: g });
 const tap = (count) => ({ type: 'tap', count });
 const color = (c) => ({ type: 'color', color: c });
 
-// The scripted voice phrase is only used by INV-4471; the other tasks end with a short ElevenLabs agent chat.
-// One entry per transaction in the sandbox ERP (public/sandbox/data.js). Unknown ids fall back to DEFAULT_STEPS.
+// One entry per transaction in the sandbox ERP (public/sandbox/data.js): one bottle, one spoken phrase, two hand movements.
+// Every task ends with the short ElevenLabs agent chat. Unknown ids fall back to DEFAULT_STEPS.
 export const TASKS = {
-  'INV-4471': [dark(), voice()],
+  'INV-4471': [voice(), chat()],
   'INV-4472': [color('yellow'), chat()],
-  'INV-4473': [color('yellow'), chat()],
-  'INV-4475': [dark(), color('yellow'), chat()],
+  'INV-4473': [gesture('fist'), chat()],
+  'INV-4475': [gesture('palm'), gesture('thumbs_up'), chat()],
 };
 
 export const DEFAULT_STEPS = [tap(3)];

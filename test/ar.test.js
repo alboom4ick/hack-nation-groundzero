@@ -10,8 +10,9 @@ test('every sandbox invoice has an AR task, and unknown ids fall back to taps', 
 });
 
 test('caption says what to do, in order', () => {
-  assert.equal(captionFor(stepsFor('INV-4471')), 'Cover the camera with your hand → Say the full phrase out loud');
-  assert.equal(captionFor(stepsFor('INV-4473')), 'Show a bottle with a yellow cap → Tell the voice assistant what you are doing');
+  assert.equal(captionFor(stepsFor('INV-4471')), 'Say the full phrase out loud → Tell the voice assistant what you are doing');
+  assert.equal(captionFor(stepsFor('INV-4472')), 'Show a bottle with a yellow cap → Tell the voice assistant what you are doing');
+  assert.equal(captionFor(stepsFor('INV-4475')), 'Hand: show an open hand → Hand: give a thumbs up → Tell the voice assistant what you are doing');
 });
 
 test('QR url carries the transaction id', () => {
@@ -70,11 +71,12 @@ test('cap colours: yellow and purple recognised, grey and dark ignored', () => {
   assert.equal(colorShare(Uint8ClampedArray.from([240, 200, 20, 255, 0, 0, 0, 255]), 'yellow'), 0.5);
 });
 
-test('only INV-4471 uses the scripted phrase; every other case ends with the agent chat', () => {
+test('four QR tasks: spoken phrase, bottle, two hand movements; every one ends with the agent chat', () => {
+  const first = (id) => TASKS[id][0].type;
+  assert.deepEqual(['INV-4471', 'INV-4472', 'INV-4473', 'INV-4475'].map(first), ['voice', 'color', 'gesture', 'gesture']);
   for (const [id, steps] of Object.entries(TASKS)) {
-    const last = id === 'INV-4471' ? 'voice' : 'chat';
-    assert.equal(steps.filter((s) => s.type === 'voice' || s.type === 'chat').length, 1, id);
-    assert.equal(steps.at(-1).type, last, id);
+    assert.equal(steps.at(-1).type, 'chat', id);
+    assert.equal(steps.filter((s) => s.type === 'chat').length, 1, id);
   }
 });
 

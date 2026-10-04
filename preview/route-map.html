@@ -1,0 +1,251 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Route map preview</title>
+<style>/* Shared visual language: warm paper, deep teal, Atkinson Hyperlegible. */
+
+:root {
+  --bg:#f5f1ea; --surface:#fffdf9; --card:#fff; --fg:#242722; --muted:#5e645c; --line:#cbc7be;
+  --accent:#176b63; --accent-ink:#fff; --tint:#ddede8;
+  --warn:#b45309; --ok:#176b63; --rec:#b3261e;
+  --shadow:0 8px 12px rgba(48,41,31,.08);
+  --r-card:22px; --r-btn:14px;
+}
+/* High-contrast set, from the design's "High Contrast" frames. */
+@media (prefers-contrast: more) {
+  :root:not([data-theme="light"]) { --bg:#fff; --surface:#fff; --fg:#000; --muted:#1f2420; --line:#242722; --accent:#0b4a44; --tint:#d4ebe5; --shadow:none; }
+}
+:root[data-theme="contrast"] { --bg:#fff; --surface:#fff; --fg:#000; --muted:#1f2420; --line:#242722; --accent:#0b4a44; --tint:#d4ebe5; --shadow:none; }
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:400 18px/1.5 'Atkinson Hyperlegible', system-ui, sans-serif; }
+main { max-width:1312px; margin:0 auto; padding:48px 32px 96px; }
+h1 { font-size:48px; line-height:1.08; font-weight:700; margin:0 0 16px; }
+h3 { font-size:24px; font-weight:700; line-height:1.2; }
+h4 { font-weight:700; }
+p.sub, .sub { color:var(--muted); font-size:22px; line-height:1.45; margin:0 0 32px; max-width:62ch; }
+.hint { color:var(--muted); font-size:16px; }
+em { font-style:normal; font-weight:700; color:var(--fg); }
+
+/* App header band */
+.app-header { background:var(--surface); border-bottom:1px solid var(--line); min-height:80px; padding:16px 48px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.brand { display:flex; align-items:center; gap:12px; font-weight:700; font-size:24px; }
+.brand svg { width:32px; height:32px; stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linejoin:round; }
+.pill { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--fg); background:var(--surface); border-radius:999px; padding:8px 16px; font-weight:700; font-size:16px; }
+.pill.tint { background:var(--tint); border-color:var(--accent); }
+.eyebrow { color:var(--accent); font-weight:700; font-size:16px; letter-spacing:1px; text-transform:uppercase; margin:0 0 12px; }
+
+/* Cards */
+.card { background:var(--card); border:1px solid var(--line); border-radius:var(--r-card); padding:24px; margin-bottom:24px; box-shadow:var(--shadow); }
+.card.selected, .card.recording { border:2px solid var(--accent); background:var(--tint); }
+#live-card.recording { border-color:var(--rec); }
+
+/* Buttons */
+button { background:var(--accent); color:var(--accent-ink); border:2px solid var(--accent); border-radius:var(--r-btn); min-height:48px; padding:10px 22px; font:700 18px/1.2 'Atkinson Hyperlegible', system-ui, sans-serif; cursor:pointer; }
+button:hover:not(:disabled) { filter:brightness(1.12); }
+button:disabled { opacity:.5; cursor:default; }
+#pager button:disabled { opacity:.3; cursor:not-allowed; filter:grayscale(1); }
+button.ghost { background:var(--surface); color:var(--fg); border:1px solid var(--fg); }
+button.ghost:hover:not(:disabled) { background:var(--tint); filter:none; }
+button.link { background:none; color:var(--accent); border:0; min-height:0; padding:0 2px; font-size:14px; text-decoration:underline; }
+:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+
+input[type=text], input:not([type]) { border:1px solid var(--line); border-radius:var(--r-btn); background:var(--surface); color:var(--fg); font:inherit; }
+progress { accent-color:var(--accent); }
+.row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+[hidden] { display:none !important; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--line); margin-right:6px; vertical-align:middle; }
+.dot.on { background:var(--ok); }
+video { width:100%; max-height:420px; background:#000; border-radius:var(--r-btn); }
+#video:not([hidden]) { position:sticky; top:0; z-index:20; box-shadow:0 8px 16px -8px rgba(0,0,0,.35); }
+summary { cursor:pointer; color:var(--muted); font-size:16px; margin-bottom:4px; }
+
+/* Voice panel */
+#voice { background:var(--card); border:1px solid var(--line); border-radius:var(--r-card); box-shadow:0 8px 30px rgba(48,41,31,.18); }
+#orb { background:radial-gradient(circle at 35% 30%, #8fd1c7, var(--accent)); }
+#voice-q { font-weight:700; }
+#voice-a { color:var(--muted); font-size:16px; min-height:1.2em; }
+#alert { border:2px solid var(--warn); }
+
+/* Steps / timeline */
+.mstep, .tstep { border-left:4px solid var(--accent); padding:6px 0 6px 16px; margin-bottom:16px; }
+.tstep { border-left-color:var(--line); }
+.tstep.now { border-color:var(--accent); }
+.tstep.right, .tstep.good { border-color:var(--ok); }
+.tstep.wrong, .tstep.bad { border-color:var(--warn); }
+.mstep h4, .tstep h4 { margin:0 0 4px; font-size:20px; }
+.mstep .field { font-size:16px; margin:2px 0; }
+.mstep .field b { color:var(--muted); font-weight:700; display:inline-block; min-width:90px; }
+.mstep .quote, .tstep .quote { font-style:normal; color:var(--muted); }
+.mstep .gap { color:var(--warn); }
+.tstep .meta { color:var(--muted); font-size:16px; }
+
+@media (max-width:768px) {
+  main { padding:32px 16px 96px; }
+  h1 { font-size:36px; }
+  .app-header { padding:16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
+
+/* ---- Warm, guided layer for older experts ---- */
+h1, h2, .display { font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif; letter-spacing:-.01em; }
+h2 { font-size:32px; line-height:1.15; margin:0 0 8px; }
+html[data-size="large"] body { zoom:1.15; }
+html[data-size="xlarge"] body { zoom:1.3; }
+body { background:radial-gradient(1200px 500px at 85% -10%, #efe6d3 0, transparent 60%), var(--bg); }
+:root[data-theme="contrast"] body { background:#fff; }
+button { transition:transform .12s, filter .12s, background .12s; }
+button:active:not(:disabled) { transform:translateY(1px); }
+button.big { min-height:72px; font-size:24px; padding:16px 32px; border-radius:18px; box-shadow:0 4px 0 rgba(0,0,0,.18); }
+button.big:disabled { box-shadow:none; }
+.skip { position:absolute; left:-999px; top:8px; background:var(--fg); color:var(--bg); padding:12px 20px; border-radius:var(--r-btn); z-index:99; font-weight:700; }
+.skip:focus { left:8px; }
+
+/* Accessibility bar */
+.a11y { display:flex; gap:8px; align-items:center; }
+.a11y button { min-height:44px; padding:6px 14px; font-size:16px; background:var(--surface); color:var(--fg); border:1px solid var(--fg); }
+.a11y button[aria-pressed="true"] { background:var(--fg); color:var(--bg); }
+.a11y .sizes { display:flex; }
+.a11y .sizes button { border-radius:0; margin-left:-1px; }
+.a11y .sizes button:first-child { border-radius:var(--r-btn) 0 0 var(--r-btn); margin-left:0; }
+.a11y .sizes button:last-child { border-radius:0 var(--r-btn) var(--r-btn) 0; }
+
+/* Hero + stepper */
+.hero { max-width:760px; margin-bottom:32px; }
+.hero h1 { font-size:56px; }
+.stepper { list-style:none; display:flex; gap:12px; padding:0; margin:0 0 32px; flex-wrap:wrap; }
+.stepper li { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:8px 20px 8px 8px; font-weight:700; }
+.stepper li b { width:36px; height:36px; border-radius:50%; background:var(--line); color:var(--fg); display:grid; place-items:center; }
+.stepper li.now { border-color:var(--accent); background:var(--tint); }
+.stepper li.now b, .stepper li.done b { background:var(--accent); color:var(--accent-ink); }
+.stepper li.done { border-color:var(--accent); }
+
+.lead-card { display:grid; grid-template-columns:1.1fr 1fr; gap:32px 48px; align-items:start; padding:40px; border:2px solid var(--accent); }
+.live-options { grid-column:2; grid-row:1 / 3; display:grid; gap:20px; padding:24px; border-radius:var(--r-card); background:var(--surface); border:1px solid var(--line); }
+.live-options .field { display:grid; gap:8px; font-size:16px; }
+.live-options .field select, .live-options .field input[type=text] { width:100%; box-sizing:border-box; min-height:48px; padding:8px 14px; font-size:18px; }
+.live-options .check { display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start; line-height:1.4; }
+.live-options .check input { width:22px; height:22px; margin:0; }
+.lead-card button.big { grid-column:1; justify-self:start; align-self:end; min-width:340px; }
+.lead-card h2 { margin:0 0 8px; }
+.lead-card p { margin:0; color:var(--muted); line-height:1.5; }
+.promises { list-style:none; margin:24px 0 0; padding:0; display:grid; gap:14px; }
+.promises li { position:relative; padding-left:40px; }
+.promises li::before { content:'✓'; position:absolute; left:0; top:0; width:28px; height:28px; border-radius:50%; background:var(--tint); color:var(--accent); font-weight:700; display:grid; place-items:center; }
+#live-status { grid-column:1 / -1; font-size:18px; }
+#live-status:empty { display:none; }
+.alt { background:transparent; border:2px dashed var(--line); box-shadow:none; }
+.alt summary { font-size:18px; font-weight:700; color:var(--fg); margin:0; padding:4px 0; }
+.alt[open] summary { margin-bottom:16px; }
+input[type=file] { font:inherit; padding:12px; border:2px dashed var(--line); border-radius:var(--r-btn); background:var(--surface); }
+input[type=file]::file-selector-button { font:700 18px 'Atkinson Hyperlegible',sans-serif; min-height:44px; padding:8px 18px; margin-right:16px; border-radius:12px; border:1px solid var(--fg); background:var(--surface); color:var(--fg); cursor:pointer; }
+.next-title { font-family:'Iowan Old Style',Georgia,serif; font-size:28px; margin:32px 0 12px; }
+#tools button { min-height:56px; }
+
+@media (max-width:768px) {
+  .hero h1 { font-size:40px; }
+  .lead-card { grid-template-columns:1fr; padding:24px; }
+  .lead-card button.big { min-width:0; grid-column:auto; }
+  .live-options { grid-column:auto; grid-row:auto; }
+  .lead-card button.big { width:100%; }
+  .app-header { flex-wrap:wrap; }
+}
+
+/* ---- Spacing pass: card heads, step lists, option panels ---- */
+.card { padding:32px; }
+.card-head { display:flex; justify-content:space-between; align-items:center; gap:16px 24px; flex-wrap:wrap; margin-bottom:24px; }
+.card-head h3 { margin:0; }
+.live-options.inline { grid-column:auto; grid-row:auto; grid-template-columns:1fr 1fr; align-items:start; margin-bottom:28px; }
+.live-options.inline .check { align-self:end; }
+.load-row { gap:20px 28px; }
+#load-msg { margin-top:16px; }
+#load-msg:empty { display:none; }
+ol.steps, #map-steps { list-style:none; margin:0; padding:0; display:grid; gap:20px; }
+ol.steps .tstep, #map-steps .mstep { margin:0; padding:10px 0 10px 20px; }
+.mstep h4, .tstep h4 { margin:0 0 8px; }
+.mstep .field { margin:4px 0; }
+#map-timeline { margin:20px 0 24px; gap:10px; }
+#debrief { border-top:1px solid var(--line); margin-top:28px; padding-top:24px; display:grid; gap:12px; }
+#debrief p { margin:0; }
+#debrief-open:empty, #teachback:empty { display:none; }
+#tools { margin:0 0 32px; gap:16px; }
+#alert h3, #summary h3 { margin:0 0 12px; }
+#summary ul { margin:0 0 20px; padding-left:24px; display:grid; gap:6px; }
+@media (max-width:768px) {
+  .card { padding:24px; }
+  .live-options.inline { grid-template-columns:1fr; }
+  .card-head button { width:100%; }
+}
+
+main{padding:32px}
+/* Route map: git-graph lanes with BPMN shapes */
+.rm-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:16px; background:var(--card); padding:8px 4px 4px; margin:8px 0 6px; }
+.rm { display:block; font-family:inherit; --k-limit:#a24e00; --k-exception:#6a3d9a; --k-stop_and_ask:var(--rec); }
+.rm .rm-main { stroke:var(--accent); stroke-width:3; fill:none; }
+.rm .rm-arrow { fill:var(--accent); }
+.rm .rm-event { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.rm .rm-event.end { stroke-width:5; }
+.rm .rm-chip rect { fill:var(--tint); stroke:var(--accent); }
+.rm .rm-chip text { font-size:12px; font-weight:700; fill:var(--accent); }
+.rm [data-step] { cursor:pointer; outline:none; }
+.rm .rm-task rect:first-of-type { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.rm .rm-task.off rect:first-of-type { stroke-dasharray:6 5; }
+.rm .off { opacity:.45; }
+.rm .rm-title { font-size:15px; font-weight:700; fill:var(--fg); }
+.rm .rm-time { font-size:12px; fill:var(--muted); }
+.rm .rm-num-dot { fill:var(--accent); stroke:var(--card); stroke-width:3; }
+.rm .rm-num { font-size:13px; font-weight:700; fill:var(--accent-ink); }
+.rm .rm-yours { fill:var(--tint); stroke:var(--accent); } .rm .rm-yours-t { font-size:11px; font-weight:700; fill:var(--accent); }
+.rm .rm-diamond { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.rm .rm-x { stroke:var(--accent); stroke-width:2.5; stroke-linecap:round; fill:none; }
+.rm .rm-label-leader { stroke:var(--muted); stroke-width:1.5; stroke-dasharray:2 4; fill:none; }
+.rm .rm-small { font-size:11px; font-weight:700; letter-spacing:.8px; fill:var(--muted); }
+.rm .rm-decision { font-size:13px; font-style:italic; fill:var(--fg); }
+.rm .rm-branch { color:var(--k-limit); } .rm .rm-pill { color:var(--k-limit); }
+.rm .k-exception { color:var(--k-exception); } .rm .k-stop_and_ask { color:var(--k-stop_and_ask); }
+.rm .rm-wire { stroke:currentColor; stroke-width:2.5; fill:none; }
+.rm .rm-branch.off .rm-wire { stroke-dasharray:5 5; }
+.rm .rm-commit { fill:var(--card); stroke:currentColor; stroke-width:2.5; }
+.rm .rm-stop { fill:var(--card); stroke:currentColor; stroke-width:2.5; } .rm .rm-stop-bar { fill:currentColor; }
+.rm .rm-pill rect { fill:var(--card); stroke:currentColor; stroke-width:2; }
+.rm .rm-glyph-dot { fill:currentColor; } .rm .rm-glyph { font-size:13px; font-weight:700; fill:var(--card); }
+.rm .rm-glyph-bar { stroke:var(--card); stroke-width:2.5; stroke-linecap:round; fill:none; }
+.rm .rm-pill .rm-small { fill:currentColor; }
+.rm .rm-rule { font-size:13px; fill:var(--fg); }
+.rm .rm-task:hover rect:first-of-type, .rm .rm-pill:hover rect, .rm .rm-diamond:hover { fill:var(--tint); }
+.rm .selected rect:first-of-type, .rm .selected .rm-diamond { fill:var(--tint); stroke-width:3.5; }
+.rm .rm-task:focus-visible rect:first-of-type, .rm .rm-pill:focus-visible rect, .rm .rm-gate:focus-visible .rm-diamond { stroke:var(--fg); stroke-width:3.5; }
+.rm .rm-branch.selected .rm-wire, .rm .rm-pill.selected rect { stroke-width:4; }
+.rm-wrap.fit { overflow-x:hidden; } .rm-wrap.fit .rm { width:100%; height:auto; }
+.legend { display:flex; gap:6px 18px; flex-wrap:wrap; color:var(--muted); font-size:14px; margin:0 0 16px; }
+.legend i { display:inline-block; vertical-align:-3px; margin-right:6px; width:14px; height:14px; border:2px solid var(--accent); border-radius:4px; }
+.legend i.ev { border-radius:50%; } .legend i.gw { transform:rotate(45deg) scale(.8); border-radius:2px; }
+.legend i.lim { border-color:#a24e00; border-radius:50%; } .legend i.exc { border-color:#6a3d9a; border-radius:50%; } .legend i.stp { border-color:var(--rec); border-radius:50%; }
+
+/* Progress through a lesson (tutor): where the new hire is, what is done, where they slipped. */
+.rm .st-done rect:first-of-type { fill:var(--tint); }
+.rm .st-done .rm-num-dot { fill:var(--ok); }
+.rm .st-wrong rect:first-of-type { stroke:var(--warn); stroke-width:3.5; }
+.rm .st-wrong .rm-num-dot { fill:var(--warn); }
+.rm .st-now rect:first-of-type { fill:var(--tint); stroke-width:4.5; }
+.rm .st-now .rm-here { display:block; }
+.rm .rm-here { display:none; fill:none; stroke:var(--accent); stroke-width:2; stroke-dasharray:3 5; }
+
+/* Mini route: the same idea squeezed into the floating island. */
+.rm-mini { display:block; width:100%; height:auto; max-height:72px; }
+.rm-mini .m-line { stroke:var(--line); stroke-width:3; stroke-linecap:round; }
+.rm-mini .m-step { fill:var(--card); stroke:var(--muted); stroke-width:2; }
+.rm-mini .m-gate { fill:var(--card); stroke:var(--muted); stroke-width:1.5; }
+.rm-mini .m-step.st-done { fill:var(--ok); stroke:var(--ok); }
+.rm-mini .m-step.st-wrong { fill:var(--warn); stroke:var(--warn); }
+.rm-mini .m-step.st-now { fill:var(--accent); stroke:var(--accent); }
+.rm-mini .m-ring { fill:none; stroke:var(--accent); stroke-width:2; opacity:.35; }
+.rm-mini .m-branch { stroke:currentColor; stroke-width:1.5; fill:none; }
+.rm-mini .m-dot { fill:currentColor; }
+.rm-mini .k-limit { color:#a24e00; } .rm-mini .k-exception { color:#6a3d9a; } .rm-mini .k-stop_and_ask { color:var(--rec); }
+
+.note{color:var(--muted);font-size:15px;margin:8px 0 24px}</style></head><body><main>
+<p class="eyebrow">Route map</p><h1 style="font-size:34px">Supplier invoices to cost centers (sample)</h1>
+<p class="note">Step 4 selected, step 5 switched off. Scroll sideways for the whole route.</p>
+<div class="rm-wrap"><svg class="rm" viewBox="0 0 2056 398" width="2056" height="398" role="group" aria-label="Route map: 7 steps, 4 guardrails. Steps are in order along the main line; guardrails branch off below."><defs><marker id="rm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="rm-arrow"></path></marker></defs><g class="rm-branch k-stop_and_ask" data-step="s2"><path class="rm-wire" d="M330,128 C344,128 344,244 358,244"></path><path class="rm-wire" d="M530,244 H543"></path><circle class="rm-commit" cx="330" cy="128" r="4.5"></circle><circle class="rm-stop" cx="554" cy="244" r="11"></circle><rect class="rm-stop-bar" x="549.5" y="239.5" width="9" height="9" rx="1.5"></rect></g><g class="rm-branch k-exception" data-step="s3"><path class="rm-wire" d="M622,128 C636,128 636,244 650,244"></path><path class="rm-wire" d="M822,244 C836,244 836,128 850,128"></path><circle class="rm-commit" cx="622" cy="128" r="4.5"></circle><circle class="rm-commit" cx="850" cy="128" r="4.5"></circle></g><g class="rm-branch k-limit" data-step="s4"><path class="rm-wire" d="M914,128 C928,128 928,244 942,244"></path><path class="rm-wire" d="M1114,244 C1128,244 1128,128 1142,128"></path><circle class="rm-commit" cx="914" cy="128" r="4.5"></circle><circle class="rm-commit" cx="1142" cy="128" r="4.5"></circle></g><g class="rm-branch k-stop_and_ask" data-step="s4"><path class="rm-wire" d="M914,128 C928,128 928,336 942,336"></path><path class="rm-wire" d="M1114,336 H1127"></path><circle class="rm-commit" cx="914" cy="128" r="4.5"></circle><circle class="rm-stop" cx="1138" cy="336" r="11"></circle><rect class="rm-stop-bar" x="1133.5" y="331.5" width="9" height="9" rx="1.5"></rect></g><line class="rm-main" x1="52" y1="128" x2="112" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="280" y1="128" x2="360" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="528" y1="128" x2="568" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="612" y1="128" x2="652" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="820" y1="128" x2="860" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="904" y1="128" x2="944" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1112" y1="128" x2="1152" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1196" y1="128" x2="1236" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1404" y1="128" x2="1444" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1488" y1="128" x2="1528" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1696" y1="128" x2="1776" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1944" y1="128" x2="2004" y2="128" marker-end="url(#rm-arrow)"></line><g class="rm-chip"><rect x="20" y="82" width="42" height="20" rx="10"></rect><text x="41" y="96" text-anchor="middle"><tspan x="41" dy="0">main</tspan></text></g><circle class="rm-event" cx="38" cy="128" r="14"><title>Start</title></circle><circle class="rm-event end" cx="2018" cy="128" r="14"><title>Done</title></circle><g class="rm-gate" tabindex="0" role="button" aria-label="Decision: Match the invoice to its purchase order" data-step="s2"><title>Decision: Match the invoice to its purchase order</title><path class="rm-label-leader" d="M590,104 V72"></path><path class="rm-diamond" d="M590,106 L612,128 L590,150 L568,128 Z"></path><path class="rm-x" d="M583,121 L597,135 M597,121 L583,135"></path><text class="rm-small" x="590" y="24" text-anchor="middle"><tspan x="590" dy="0">DECISION</tspan></text><text class="rm-decision" x="590" y="40" lh="16" text-anchor="middle"><tspan x="590" dy="0">Match the invoice to its</tspan><tspan x="590" dy="16">purchase order</tspan></text></g><g class="rm-gate" tabindex="0" role="button" aria-label="Decision: Hold the invoice when the supplier double-bills in December" data-step="s3"><title>Decision: Hold the invoice when the supplier double-bills in December</title><path class="rm-label-leader" d="M882,104 V72"></path><path class="rm-diamond" d="M882,106 L904,128 L882,150 L860,128 Z"></path><path class="rm-x" d="M875,121 L889,135 M889,121 L875,135"></path><text class="rm-small" x="882" y="8" text-anchor="middle"><tspan x="882" dy="0">DECISION</tspan></text><text class="rm-decision" x="882" y="24" lh="16" text-anchor="middle"><tspan x="882" dy="0">Hold the invoice when the</tspan><tspan x="882" dy="16">supplier double-bills in</tspan><tspan x="882" dy="16">December</tspan></text></g><g class="rm-gate selected" tabindex="0" role="button" aria-label="Decision: Re-code from opex (4711) to capex (0400)" data-step="s4"><title>Decision: Re-code from opex (4711) to capex (0400)</title><path class="rm-label-leader" d="M1174,104 V72"></path><path class="rm-diamond" d="M1174,106 L1196,128 L1174,150 L1152,128 Z"></path><path class="rm-x" d="M1167,121 L1181,135 M1181,121 L1167,135"></path><text class="rm-small" x="1174" y="24" text-anchor="middle"><tspan x="1174" dy="0">DECISION</tspan></text><text class="rm-decision" x="1174" y="40" lh="16" text-anchor="middle"><tspan x="1174" dy="0">Re-code from opex (4711) to</tspan><tspan x="1174" dy="16">capex (0400)</tspan></text></g><g class="rm-gate off" tabindex="0" role="button" aria-label="Decision: Send foreign-subsidiary invoices for a second approval" data-step="s5"><title>Decision: Send foreign-subsidiary invoices for a second approval</title><path class="rm-label-leader" d="M1466,104 V72"></path><path class="rm-diamond" d="M1466,106 L1488,128 L1466,150 L1444,128 Z"></path><path class="rm-x" d="M1459,121 L1473,135 M1473,121 L1459,135"></path><text class="rm-small" x="1466" y="24" text-anchor="middle"><tspan x="1466" dy="0">DECISION</tspan></text><text class="rm-decision" x="1466" y="40" lh="16" text-anchor="middle"><tspan x="1466" dy="0">Send foreign-subsidiary</tspan><tspan x="1466" dy="16">invoices for a second approval</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 1: Open the next invoice" data-step="s1"><title>Open the next invoice</title><rect x="112" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="105" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="196" y="119" lh="18" text-anchor="middle"><tspan x="196" dy="0">Open the next</tspan><tspan x="196" dy="18">invoice</tspan></text><text class="rm-time" x="196" y="162" text-anchor="middle"><tspan x="196" dy="0">0:00–0:20</tspan></text><circle class="rm-num-dot" cx="114" cy="86" r="13"></circle><text class="rm-num" x="114" y="91" text-anchor="middle"><tspan x="114" dy="0">1</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 2: Check supplier and PO" data-step="s2"><title>Check supplier and PO</title><rect x="360" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="353" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="444" y="119" lh="18" text-anchor="middle"><tspan x="444" dy="0">Check supplier and</tspan><tspan x="444" dy="18">PO</tspan></text><text class="rm-time" x="444" y="162" text-anchor="middle"><tspan x="444" dy="0">0:20–0:55</tspan></text><circle class="rm-num-dot" cx="362" cy="86" r="13"></circle><text class="rm-num" x="362" y="91" text-anchor="middle"><tspan x="362" dy="0">2</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 3: Check for duplicates" data-step="s3"><title>Check for duplicates</title><rect x="652" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="645" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="736" y="119" lh="18" text-anchor="middle"><tspan x="736" dy="0">Check for</tspan><tspan x="736" dy="18">duplicates</tspan></text><text class="rm-time" x="736" y="162" text-anchor="middle"><tspan x="736" dy="0">0:55–2:00</tspan></text><circle class="rm-num-dot" cx="654" cy="86" r="13"></circle><text class="rm-num" x="654" y="91" text-anchor="middle"><tspan x="654" dy="0">3</tspan></text></g><g class="rm-task selected" tabindex="0" role="button" aria-label="Step 4: Code invoice to cost center" data-step="s4"><title>Code invoice to cost center</title><rect x="944" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="937" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1028" y="119" lh="18" text-anchor="middle"><tspan x="1028" dy="0">Code invoice to</tspan><tspan x="1028" dy="18">cost center</tspan></text><text class="rm-time" x="1028" y="162" text-anchor="middle"><tspan x="1028" dy="0">2:00–3:18</tspan></text><circle class="rm-num-dot" cx="946" cy="86" r="13"></circle><text class="rm-num" x="946" y="91" text-anchor="middle"><tspan x="946" dy="0">4</tspan></text></g><g class="rm-task off" tabindex="0" role="button" aria-label="Step 5: Route for approval (switched off)" data-step="s5"><title>Route for approval</title><rect x="1236" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="1229" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1320" y="128" lh="18" text-anchor="middle"><tspan x="1320" dy="0">Route for approval</tspan></text><text class="rm-time" x="1320" y="162" text-anchor="middle"><tspan x="1320" dy="0">3:18–4:20</tspan></text><circle class="rm-num-dot" cx="1238" cy="86" r="13"></circle><text class="rm-num" x="1238" y="91" text-anchor="middle"><tspan x="1238" dy="0">5</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 6: Post the invoice" data-step="s6"><title>Post the invoice</title><rect x="1528" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="1521" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1612" y="128" lh="18" text-anchor="middle"><tspan x="1612" dy="0">Post the invoice</tspan></text><text class="rm-time" x="1612" y="162" text-anchor="middle"><tspan x="1612" dy="0">4:20–4:50</tspan></text><circle class="rm-num-dot" cx="1530" cy="86" r="13"></circle><text class="rm-num" x="1530" y="91" text-anchor="middle"><tspan x="1530" dy="0">6</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 7: Log it in the close sheet" data-step="s7"><title>Log it in the close sheet</title><rect x="1776" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="1769" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1860" y="119" lh="18" text-anchor="middle"><tspan x="1860" dy="0">Log it in the close</tspan><tspan x="1860" dy="18">sheet</tspan></text><text class="rm-time" x="1860" y="162" text-anchor="middle"><tspan x="1860" dy="0">4:50–5:20</tspan></text><circle class="rm-num-dot" cx="1778" cy="86" r="13"></circle><text class="rm-num" x="1778" y="91" text-anchor="middle"><tspan x="1778" dy="0">7</tspan></text></g><g class="rm-pill k-stop_and_ask" tabindex="0" role="button" aria-label="Stop and ask: Unknown supplier: stop and ask the controller" data-step="s2"><title>Stop and ask: Unknown supplier: stop and ask the controller</title><rect x="356" y="206" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="373" cy="223" r="9"></circle><text class="rm-glyph" x="373" y="227.5" text-anchor="middle"><tspan x="373" dy="0">?</tspan></text><text class="rm-small" x="388" y="227"><tspan x="388" dy="0">STOP AND ASK</tspan></text><text class="rm-rule" x="368" y="248" lh="15"><tspan x="368" dy="0">Unknown supplier: stop</tspan><tspan x="368" dy="15">and ask the controller</tspan></text></g><g class="rm-pill k-exception" tabindex="0" role="button" aria-label="Exception: December invoices from the double-billing supplier are held" data-step="s3"><title>Exception: December invoices from the double-billing supplier are held</title><rect x="648" y="206" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="665" cy="223" r="9"></circle><text class="rm-glyph" x="665" y="227.5" text-anchor="middle"><tspan x="665" dy="0">!</tspan></text><text class="rm-small" x="680" y="227"><tspan x="680" dy="0">EXCEPTION</tspan></text><text class="rm-rule" x="660" y="248" lh="15"><tspan x="660" dy="0">December invoices from</tspan><tspan x="660" dy="15">the double-billing</tspan><tspan x="660" dy="15">supplier are held</tspan></text></g><g class="rm-pill k-limit selected" tabindex="0" role="button" aria-label="Limit: Equipment over 5,000 EUR is booked as capex (0400)" data-step="s4"><title>Limit: Equipment over 5,000 EUR is booked as capex (0400)</title><rect x="940" y="206" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="957" cy="223" r="9"></circle><path class="rm-glyph-bar" d="M952,223 H960 M961,218 V228"></path><text class="rm-small" x="972" y="227"><tspan x="972" dy="0">LIMIT</tspan></text><text class="rm-rule" x="952" y="248" lh="15"><tspan x="952" dy="0">Equipment over 5,000</tspan><tspan x="952" dy="15">EUR is booked as capex</tspan><tspan x="952" dy="15">(0400)</tspan></text></g><g class="rm-pill k-stop_and_ask selected" tabindex="0" role="button" aria-label="Stop and ask: No asset number: do not book capex" data-step="s4"><title>Stop and ask: No asset number: do not book capex</title><rect x="940" y="298" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="957" cy="315" r="9"></circle><text class="rm-glyph" x="957" y="319.5" text-anchor="middle"><tspan x="957" dy="0">?</tspan></text><text class="rm-small" x="972" y="319"><tspan x="972" dy="0">STOP AND ASK</tspan></text><text class="rm-rule" x="952" y="340" lh="15"><tspan x="952" dy="0">No asset number: do not</tspan><tspan x="952" dy="15">book capex</tspan></text></g></svg></div>
+<p class="legend"><span><i class="ev"></i>Start / done</span><span><i></i>Step</span><span><i class="gw"></i>Decision</span><span><i class="lim"></i>Limit: branch that rejoins</span><span><i class="exc"></i>Exception: branch that rejoins</span><span><i class="stp"></i>Stop and ask: branch that ends</span></p>
+<h2 style="margin-top:32px">Same map, fit to width</h2>
+<div class="rm-wrap fit"><svg class="rm" viewBox="0 0 2056 398" width="2056" height="398" role="group" aria-label="Route map: 7 steps, 4 guardrails. Steps are in order along the main line; guardrails branch off below."><defs><marker id="rm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="rm-arrow"></path></marker></defs><g class="rm-branch k-stop_and_ask" data-step="s2"><path class="rm-wire" d="M330,128 C344,128 344,244 358,244"></path><path class="rm-wire" d="M530,244 H543"></path><circle class="rm-commit" cx="330" cy="128" r="4.5"></circle><circle class="rm-stop" cx="554" cy="244" r="11"></circle><rect class="rm-stop-bar" x="549.5" y="239.5" width="9" height="9" rx="1.5"></rect></g><g class="rm-branch k-exception" data-step="s3"><path class="rm-wire" d="M622,128 C636,128 636,244 650,244"></path><path class="rm-wire" d="M822,244 C836,244 836,128 850,128"></path><circle class="rm-commit" cx="622" cy="128" r="4.5"></circle><circle class="rm-commit" cx="850" cy="128" r="4.5"></circle></g><g class="rm-branch k-limit" data-step="s4"><path class="rm-wire" d="M914,128 C928,128 928,244 942,244"></path><path class="rm-wire" d="M1114,244 C1128,244 1128,128 1142,128"></path><circle class="rm-commit" cx="914" cy="128" r="4.5"></circle><circle class="rm-commit" cx="1142" cy="128" r="4.5"></circle></g><g class="rm-branch k-stop_and_ask" data-step="s4"><path class="rm-wire" d="M914,128 C928,128 928,336 942,336"></path><path class="rm-wire" d="M1114,336 H1127"></path><circle class="rm-commit" cx="914" cy="128" r="4.5"></circle><circle class="rm-stop" cx="1138" cy="336" r="11"></circle><rect class="rm-stop-bar" x="1133.5" y="331.5" width="9" height="9" rx="1.5"></rect></g><line class="rm-main" x1="52" y1="128" x2="112" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="280" y1="128" x2="360" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="528" y1="128" x2="568" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="612" y1="128" x2="652" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="820" y1="128" x2="860" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="904" y1="128" x2="944" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1112" y1="128" x2="1152" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1196" y1="128" x2="1236" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1404" y1="128" x2="1444" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1488" y1="128" x2="1528" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1696" y1="128" x2="1776" y2="128" marker-end="url(#rm-arrow)"></line><line class="rm-main" x1="1944" y1="128" x2="2004" y2="128" marker-end="url(#rm-arrow)"></line><g class="rm-chip"><rect x="20" y="82" width="42" height="20" rx="10"></rect><text x="41" y="96" text-anchor="middle"><tspan x="41" dy="0">main</tspan></text></g><circle class="rm-event" cx="38" cy="128" r="14"><title>Start</title></circle><circle class="rm-event end" cx="2018" cy="128" r="14"><title>Done</title></circle><g class="rm-gate" tabindex="0" role="button" aria-label="Decision: Match the invoice to its purchase order" data-step="s2"><title>Decision: Match the invoice to its purchase order</title><path class="rm-label-leader" d="M590,104 V72"></path><path class="rm-diamond" d="M590,106 L612,128 L590,150 L568,128 Z"></path><path class="rm-x" d="M583,121 L597,135 M597,121 L583,135"></path><text class="rm-small" x="590" y="24" text-anchor="middle"><tspan x="590" dy="0">DECISION</tspan></text><text class="rm-decision" x="590" y="40" lh="16" text-anchor="middle"><tspan x="590" dy="0">Match the invoice to its</tspan><tspan x="590" dy="16">purchase order</tspan></text></g><g class="rm-gate" tabindex="0" role="button" aria-label="Decision: Hold the invoice when the supplier double-bills in December" data-step="s3"><title>Decision: Hold the invoice when the supplier double-bills in December</title><path class="rm-label-leader" d="M882,104 V72"></path><path class="rm-diamond" d="M882,106 L904,128 L882,150 L860,128 Z"></path><path class="rm-x" d="M875,121 L889,135 M889,121 L875,135"></path><text class="rm-small" x="882" y="8" text-anchor="middle"><tspan x="882" dy="0">DECISION</tspan></text><text class="rm-decision" x="882" y="24" lh="16" text-anchor="middle"><tspan x="882" dy="0">Hold the invoice when the</tspan><tspan x="882" dy="16">supplier double-bills in</tspan><tspan x="882" dy="16">December</tspan></text></g><g class="rm-gate selected" tabindex="0" role="button" aria-label="Decision: Re-code from opex (4711) to capex (0400)" data-step="s4"><title>Decision: Re-code from opex (4711) to capex (0400)</title><path class="rm-label-leader" d="M1174,104 V72"></path><path class="rm-diamond" d="M1174,106 L1196,128 L1174,150 L1152,128 Z"></path><path class="rm-x" d="M1167,121 L1181,135 M1181,121 L1167,135"></path><text class="rm-small" x="1174" y="24" text-anchor="middle"><tspan x="1174" dy="0">DECISION</tspan></text><text class="rm-decision" x="1174" y="40" lh="16" text-anchor="middle"><tspan x="1174" dy="0">Re-code from opex (4711) to</tspan><tspan x="1174" dy="16">capex (0400)</tspan></text></g><g class="rm-gate off" tabindex="0" role="button" aria-label="Decision: Send foreign-subsidiary invoices for a second approval" data-step="s5"><title>Decision: Send foreign-subsidiary invoices for a second approval</title><path class="rm-label-leader" d="M1466,104 V72"></path><path class="rm-diamond" d="M1466,106 L1488,128 L1466,150 L1444,128 Z"></path><path class="rm-x" d="M1459,121 L1473,135 M1473,121 L1459,135"></path><text class="rm-small" x="1466" y="24" text-anchor="middle"><tspan x="1466" dy="0">DECISION</tspan></text><text class="rm-decision" x="1466" y="40" lh="16" text-anchor="middle"><tspan x="1466" dy="0">Send foreign-subsidiary</tspan><tspan x="1466" dy="16">invoices for a second approval</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 1: Open the next invoice" data-step="s1"><title>Open the next invoice</title><rect x="112" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="105" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="196" y="119" lh="18" text-anchor="middle"><tspan x="196" dy="0">Open the next</tspan><tspan x="196" dy="18">invoice</tspan></text><text class="rm-time" x="196" y="162" text-anchor="middle"><tspan x="196" dy="0">0:00–0:20</tspan></text><circle class="rm-num-dot" cx="114" cy="86" r="13"></circle><text class="rm-num" x="114" y="91" text-anchor="middle"><tspan x="114" dy="0">1</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 2: Check supplier and PO" data-step="s2"><title>Check supplier and PO</title><rect x="360" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="353" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="444" y="119" lh="18" text-anchor="middle"><tspan x="444" dy="0">Check supplier and</tspan><tspan x="444" dy="18">PO</tspan></text><text class="rm-time" x="444" y="162" text-anchor="middle"><tspan x="444" dy="0">0:20–0:55</tspan></text><circle class="rm-num-dot" cx="362" cy="86" r="13"></circle><text class="rm-num" x="362" y="91" text-anchor="middle"><tspan x="362" dy="0">2</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 3: Check for duplicates" data-step="s3"><title>Check for duplicates</title><rect x="652" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="645" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="736" y="119" lh="18" text-anchor="middle"><tspan x="736" dy="0">Check for</tspan><tspan x="736" dy="18">duplicates</tspan></text><text class="rm-time" x="736" y="162" text-anchor="middle"><tspan x="736" dy="0">0:55–2:00</tspan></text><circle class="rm-num-dot" cx="654" cy="86" r="13"></circle><text class="rm-num" x="654" y="91" text-anchor="middle"><tspan x="654" dy="0">3</tspan></text></g><g class="rm-task selected" tabindex="0" role="button" aria-label="Step 4: Code invoice to cost center" data-step="s4"><title>Code invoice to cost center</title><rect x="944" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="937" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1028" y="119" lh="18" text-anchor="middle"><tspan x="1028" dy="0">Code invoice to</tspan><tspan x="1028" dy="18">cost center</tspan></text><text class="rm-time" x="1028" y="162" text-anchor="middle"><tspan x="1028" dy="0">2:00–3:18</tspan></text><circle class="rm-num-dot" cx="946" cy="86" r="13"></circle><text class="rm-num" x="946" y="91" text-anchor="middle"><tspan x="946" dy="0">4</tspan></text></g><g class="rm-task off" tabindex="0" role="button" aria-label="Step 5: Route for approval (switched off)" data-step="s5"><title>Route for approval</title><rect x="1236" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="1229" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1320" y="128" lh="18" text-anchor="middle"><tspan x="1320" dy="0">Route for approval</tspan></text><text class="rm-time" x="1320" y="162" text-anchor="middle"><tspan x="1320" dy="0">3:18–4:20</tspan></text><circle class="rm-num-dot" cx="1238" cy="86" r="13"></circle><text class="rm-num" x="1238" y="91" text-anchor="middle"><tspan x="1238" dy="0">5</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 6: Post the invoice" data-step="s6"><title>Post the invoice</title><rect x="1528" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="1521" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1612" y="128" lh="18" text-anchor="middle"><tspan x="1612" dy="0">Post the invoice</tspan></text><text class="rm-time" x="1612" y="162" text-anchor="middle"><tspan x="1612" dy="0">4:20–4:50</tspan></text><circle class="rm-num-dot" cx="1530" cy="86" r="13"></circle><text class="rm-num" x="1530" y="91" text-anchor="middle"><tspan x="1530" dy="0">6</tspan></text></g><g class="rm-task" tabindex="0" role="button" aria-label="Step 7: Log it in the close sheet" data-step="s7"><title>Log it in the close sheet</title><rect x="1776" y="84" width="168" height="88" rx="12"></rect><rect class="rm-here" x="1769" y="77" width="182" height="102" rx="17"></rect><text class="rm-title" x="1860" y="119" lh="18" text-anchor="middle"><tspan x="1860" dy="0">Log it in the close</tspan><tspan x="1860" dy="18">sheet</tspan></text><text class="rm-time" x="1860" y="162" text-anchor="middle"><tspan x="1860" dy="0">4:50–5:20</tspan></text><circle class="rm-num-dot" cx="1778" cy="86" r="13"></circle><text class="rm-num" x="1778" y="91" text-anchor="middle"><tspan x="1778" dy="0">7</tspan></text></g><g class="rm-pill k-stop_and_ask" tabindex="0" role="button" aria-label="Stop and ask: Unknown supplier: stop and ask the controller" data-step="s2"><title>Stop and ask: Unknown supplier: stop and ask the controller</title><rect x="356" y="206" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="373" cy="223" r="9"></circle><text class="rm-glyph" x="373" y="227.5" text-anchor="middle"><tspan x="373" dy="0">?</tspan></text><text class="rm-small" x="388" y="227"><tspan x="388" dy="0">STOP AND ASK</tspan></text><text class="rm-rule" x="368" y="248" lh="15"><tspan x="368" dy="0">Unknown supplier: stop</tspan><tspan x="368" dy="15">and ask the controller</tspan></text></g><g class="rm-pill k-exception" tabindex="0" role="button" aria-label="Exception: December invoices from the double-billing supplier are held" data-step="s3"><title>Exception: December invoices from the double-billing supplier are held</title><rect x="648" y="206" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="665" cy="223" r="9"></circle><text class="rm-glyph" x="665" y="227.5" text-anchor="middle"><tspan x="665" dy="0">!</tspan></text><text class="rm-small" x="680" y="227"><tspan x="680" dy="0">EXCEPTION</tspan></text><text class="rm-rule" x="660" y="248" lh="15"><tspan x="660" dy="0">December invoices from</tspan><tspan x="660" dy="15">the double-billing</tspan><tspan x="660" dy="15">supplier are held</tspan></text></g><g class="rm-pill k-limit selected" tabindex="0" role="button" aria-label="Limit: Equipment over 5,000 EUR is booked as capex (0400)" data-step="s4"><title>Limit: Equipment over 5,000 EUR is booked as capex (0400)</title><rect x="940" y="206" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="957" cy="223" r="9"></circle><path class="rm-glyph-bar" d="M952,223 H960 M961,218 V228"></path><text class="rm-small" x="972" y="227"><tspan x="972" dy="0">LIMIT</tspan></text><text class="rm-rule" x="952" y="248" lh="15"><tspan x="952" dy="0">Equipment over 5,000</tspan><tspan x="952" dy="15">EUR is booked as capex</tspan><tspan x="952" dy="15">(0400)</tspan></text></g><g class="rm-pill k-stop_and_ask selected" tabindex="0" role="button" aria-label="Stop and ask: No asset number: do not book capex" data-step="s4"><title>Stop and ask: No asset number: do not book capex</title><rect x="940" y="298" width="176" height="76" rx="12"></rect><circle class="rm-glyph-dot" cx="957" cy="315" r="9"></circle><text class="rm-glyph" x="957" y="319.5" text-anchor="middle"><tspan x="957" dy="0">?</tspan></text><text class="rm-small" x="972" y="319"><tspan x="972" dy="0">STOP AND ASK</tspan></text><text class="rm-rule" x="952" y="340" lh="15"><tspan x="952" dy="0">No asset number: do not</tspan><tspan x="952" dy="15">book capex</tspan></text></g></svg></div>
+</main></body></html>

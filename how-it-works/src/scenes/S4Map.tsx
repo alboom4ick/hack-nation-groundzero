@@ -56,7 +56,7 @@ export const S4Map: React.FC = () => {
         <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
           <div style={{width: 50, height: 50, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #fde68a, #f0a93b)', transform: `scale(${1 + 0.06 * Math.sin(f / 4)})`}} />
           <div style={{font: `700 15px ${SANS}`, letterSpacing: '.12em', textTransform: 'uppercase', color: C.muted}}>
-            <b style={{color: C.amber}}>Teach-back</b> · the apprentice says it in its own words
+            <b style={{color: C.amber}}>Teach-back</b> · the apprentice plays it back
           </div>
           <span style={{marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 999, background: 'rgba(45,212,191,.14)', border: '1px solid rgba(45,212,191,.5)', color: C.glow, font: `700 15px ${SANS}`, opacity: p(f, 10, 26)}}>
             <IconCheck size={16} /> 3 follow-ups answered

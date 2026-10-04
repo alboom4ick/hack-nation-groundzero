@@ -38,7 +38,6 @@ export const S3Paper: React.FC = () => {
   const sheetY = 300 + (SY + 31 - 300) * slide - Math.sin(Math.PI * slide) * 24;
   const scan = f >= 64 && f <= 92 ? p(f, 64, 92, (t) => t) : -1;
   const flash = p(f, 90, 96) * (1 - p(f, 96, 112));
-  const qrGlow = p(f, 150, 162) * (1 - p(f, 224, 240));
 
   const stampRing = (p(f, 78, 88) * (1 - p(f, 112, 124))) * (0.7 + 0.3 * Math.sin(f / 3));
 
@@ -62,7 +61,7 @@ export const S3Paper: React.FC = () => {
       <Zone x={36} y={212} w={420} h={452} kind="physical" opacity={p(f, 8, 28)} />
       <Person name="Maria" role="at the scanner" initial="M" style={{position: 'absolute', left: 64, top: 238, opacity: p(f, 14, 32)}} />
       <Scanner x={SX} y={SY} w={240} scan={scan} led={f >= 64 ? 1 : 0} opacity={p(f, 14, 34)} />
-      <Paper x={sheetX} y={sheetY} w={PW} rot={-6 * (1 - slide)} lift={Math.sin(Math.PI * slide)} scanFlash={flash} qrGlow={qrGlow} opacity={p(f, 26, 40)} stamp={1} />
+      <Paper qr={false} x={sheetX} y={sheetY} w={PW} rot={-6 * (1 - slide)} lift={Math.sin(Math.PI * slide)} scanFlash={flash} opacity={p(f, 26, 40)} stamp={1} />
       {/* ring around the stamp while she says "date stamp" */}
       <div
         style={{
@@ -81,7 +80,7 @@ export const S3Paper: React.FC = () => {
         style={{
           position: 'absolute',
           left: 64,
-          top: 598,
+          top: 580,
           width: 364,
           opacity: p(f, 150, 170),
           transform: `translateY(${(1 - p(f, 150, 170)) * 12}px)`,
@@ -89,7 +88,7 @@ export const S3Paper: React.FC = () => {
           color: C.fg,
         }}
       >
-        <b style={{color: C.glow}}>QR on every page</b> ties this paper step to the invoice on screen.
+        <b style={{color: C.glow}}>Any physical action counts.</b> Our demo steps are simple, but it could be a barista or a data center engineer.
       </div>
 
       <Island x={486} y={212} w={440} state={state} sub={sub} question={question} say={say} still={still} quiet={quiet} amp={talking ? 0.8 : 0.08} opacity={p(f, 14, 36)} />
