@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>AR Workflow Player</title>
+<link rel="stylesheet" href="player.css">
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<div id="stage"></div>
+<svg id="lines"></svg>
+<div id="overlay"></div>
+<header id="top"><span id="process-name"></span><button id="restart-top" aria-label="Restart">⟲</button></header>
+<footer id="actions"></footer>
+<div id="toast" hidden></div>
+<script type="module" src="player.js"></script>
+</body>
+</html>

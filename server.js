@@ -13,7 +13,7 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 if (existsSync(join(here, '.env'))) process.loadEnvFile(join(here, '.env'));
 
 const root = join(here, 'public');
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 const MAX_BODY = 20 * 1024 * 1024;
 
 async function readRaw(req) {
