@@ -1,8 +1,22 @@
 # GroundZero: The AI Apprentice
 
-Project for **Hack-Nation 7th Global AI Hackathon, Challenge 01: The AI Apprentice** (powered by ElevenLabs).
+Project of **Team UAKZ** for **Hack-Nation 7th Global AI Hackathon, Challenge 01: The AI Apprentice** (powered by ElevenLabs).
 Source brief: `../File (1).pdf`. This README restates the brief as project requirements, one to one.
 Open gaps are tracked in [TODO.md](TODO.md) as `G1…G13` (plus `S1…S3`, `MS`); what you must do yourself to close them is in [UNBLOCK.md](UNBLOCK.md).
+
+## Project summary
+
+Companies lose their best people's judgment when those people leave. Recordings show *what* an expert clicked, not *why*, and the limits ("equipment over 5,000 EUR is always capex") are never written down.
+
+**GroundZero is an AI apprentice for desk work.** We built three connected modules during the hackathon:
+
+- **Capture:** the expert shares their screen and works a real task while talking. A vision model turns screen changes into events, and a voice agent (ElevenLabs, Scribe v2 Realtime) asks *why* only when the screen is still and the expert has stopped talking. It asks at least three questions, one about a guardrail.
+- **Map:** a spoken debrief with follow-ups the expert did not answer while working, then a teach-back that the expert confirms. The result is a **Work Map**: every step carries the decision, the reason in the expert's verbatim words (invented quotes are dropped) and its guardrails, each linked to a screen moment.
+- **Teach:** a voice tutor coaches a new hire through the Work Map, asks them to predict the expert's next decision, and on a case the expert never showed it stops a wrong save before it happens.
+
+**Who benefits:** teams losing experts to retirement or turnover, new hires who learn the reasoning instead of the clicks, and software agents. The same Work Map exports as guardrails an agent can load or query over MCP.
+
+**What works today:** all of the above in code (157 tests pass). Checked with live model calls: the tutor flags cost center 4711 on an unseen EUR 7,200 equipment invoice and quotes the expert, and an agent given only the export stops and asks the controller. Privacy: off-the-record mode, masked frames, and the expert can delete anything afterwards.
 
 ## Status snapshot (2026-10-04)
 
@@ -202,9 +216,12 @@ Suggested wiring from the brief: (1) the browser shares the screen, a frame ever
 - [~] A live demo that answers the five Apprentice Test questions: answers written in `PITCH.md`; the **measure** numbers wait for the rehearsal
 - [x] A workflow on fake or sandbox data: `public/sandbox/` (four invoices, the invoicing running example)
 - [x] One-slide moonshot at the end of the pitch: `MOONSHOT.md`
-- [ ] Hackathon submission files (`../Final Submission Guide.md`): demo and tech videos, 1-page PDF, public repo, zip, form
+- [~] Hackathon submission files (`../Final Submission Guide.md`): short description (the *Project summary* above) and public repo are done; 1-page PDF is done (`submission/UAKZ_OnePager.pdf`); demo video, tech video, zip and form are open
 
 ## 9. Run it
+
+Team: **UAKZ**: Kostiantyn Ostapenko, Alibek Omirzak. One-page report: [`submission/UAKZ_OnePager.pdf`](submission/UAKZ_OnePager.pdf) (source: `submission/UAKZ_OnePager.html`).
+
 
 ```bash
 npm install        # Node 20+; installs pg and the AWS S3 client (used only by the action trees page)
@@ -226,7 +243,7 @@ Anything not required by the brief was cut so the pitch stays Capture → Map �
 
 ## 11. How we built it
 
-**Stack.** Plain ES modules in the browser and on Node 20+, no framework and no build step. One request handler (`lib/app.js`) serves everything: `server.js` runs it locally, `api/index.js` runs the same handler as a Vercel function. About 4,800 lines of JavaScript, 163 tests (`node:test`).
+**Stack.** Plain ES modules in the browser and on Node 20+, no framework and no build step. One request handler (`lib/app.js`) serves everything: `server.js` runs it locally, `api/index.js` runs the same handler as a Vercel function. About 4,800 lines of JavaScript, 157 tests (`node:test`).
 
 **Architecture.** The browser does the watching, the server only holds the API keys and talks to the models.
 
@@ -262,7 +279,7 @@ Each item says how we know. Nothing here is a claim about a full live rehearsal 
 
 | What | Evidence |
 |---|---|
-| The logic of all three modules | `npm test`: 163 tests pass |
+| The logic of all three modules | `npm test`: 157 tests pass |
 | The tutor catches the unseen invoice | A live call to the real model flagged cost center 4711 on the unseen 7,200 EUR invoice and quoted the expert (2026-10-04) |
 | The Work Map can be handed to an agent | `node scripts/verify-export.js` ran the unseen case against an agent holding only the exported instructions; it stopped and asked the controller (2026-10-04) |
 | Capture and Teach in a browser | Run with a synthetic screen and a stubbed network |
@@ -301,7 +318,7 @@ We would rather say this plainly than let a judge find it.
 | **MediaPipe Hands** (AR page only) | Hand gesture detection, loaded from a CDN on first use | `public/ar/` |
 | **Vercel** | Hosting: static `public/` plus the same handler as a function | `vercel.json`, `api/index.js` |
 | **AWS Aurora Serverless v2 (Postgres) and S3, via Terraform** | Saved action trees and their videos (videos upload and play through presigned URLs, never through our server) | `infra/`, `lib/trees-db.js`, `lib/videos.js` |
-| **Node's test runner** | 163 unit tests of the pure modules | `npm test` |
+| **Node's test runner** | 157 unit tests of the pure modules | `npm test` |
 | **Claude Code** | Used to build the project | |
 
 **Suggested technical demo order (about 3 minutes).**

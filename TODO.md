@@ -66,4 +66,4 @@ Synced 2026-10-04 after the architecture pass. Nothing below has been rehearsed 
 - [x] README restates the brief as requirements; `.env.example` added; misspelt `ELEVENLAPS_API` alias removed.
 - [x] Architecture pass (2026-10-04): one module each for the model call (`lib/model.js`), the voice turn (`public/voice-turn.js`), the screen watch (`public/screen-watch.js`), the debrief (`public/debrief.js`), question pacing (`public/pacing.js`), the lesson and save hold (`createLesson` in `public/tutor-logic.js`, `public/save-hold.js`) and reading a Work Map (`readWorkMap` in `public/workmap.js`). Domain terms are in `CONTEXT.md`.
 - [x] The built-in voice no longer stalls when the app tab is in the background (silence detection ran on animation frames).
-- [x] `npm test`: 111 tests pass (2026-10-04); every file and function named in the README exists.
+- [x] `npm test`: 157 tests pass (2026-10-04); every file and function named in the README exists.

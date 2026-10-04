@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>UAKZ One-Pager: GroundZero</title>
+<style>
+@page{size:A4;margin:8mm 11mm}
+*{box-sizing:border-box}
+body{font:8.5pt/1.32 -apple-system,"Helvetica Neue",Arial,sans-serif;color:#1c1f26;margin:0}
+header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1c1f26;padding-bottom:5px;margin-bottom:7px}
+h1{font-size:19pt;margin:0;letter-spacing:-.4px}
+.sub{font-size:8.6pt;color:#555;margin-top:1px}
+.meta{text-align:right;font-size:8pt;color:#555;line-height:1.35}
+h2{font-size:9pt;margin:6px 0 2px;text-transform:uppercase;letter-spacing:.6px;color:#0b5cad}
+p{margin:2px 0}
+ul{margin:2px 0 0;padding-left:14px}
+li{margin:1px 0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+table{border-collapse:collapse;width:100%;font-size:8pt;margin-top:3px}
+td,th{border:1px solid #cdd3dc;padding:1px 4px;text-align:left;vertical-align:top}
+th{background:#eef2f7}
+.diagram{display:flex;align-items:stretch;gap:4px;margin:4px 0 2px;font-size:7.4pt}
+.box{flex:1;border:1.5px solid #0b5cad;border-radius:5px;padding:4px 6px;background:#f4f8fd}
+.box b{display:block;color:#0b5cad;font-size:8.4pt}
+.arrow{align-self:center;font-size:13pt;color:#0b5cad}
+.ok{color:#0a7a3b;font-weight:600}.no{color:#b3261e;font-weight:600}
+footer{margin-top:7px;border-top:1px solid #cdd3dc;padding-top:4px;font-size:8pt;color:#444}
+</style></head><body>
+<header>
+  <div><h1>GroundZero: The AI Apprentice</h1>
+  <div class="sub">An AI that learns <i>why</i> an expert decides, then teaches the next person (or agent) to decide the same way.</div></div>
+  <div class="meta"><b>Team UAKZ</b><br>Kostiantyn Ostapenko, Alibek Omirzak<br>Hack-Nation 7th Global AI Hackathon<br>Challenge 01: The AI Apprentice (ElevenLabs)<br>github.com/alboom4ick/hack-nation-groundzero</div>
+</header>
+
+<h2>1. Challenge tackled</h2>
+<p><b>Problem:</b> what makes an experienced employee good is never written down. Screen recordings show <i>what</i> was clicked, not <i>why</i>, and limits ("equipment over 5,000 EUR is always capex") stay invisible until someone breaks them. <b>Users:</b> the <b>expert</b> (an accounts-payable clerk), the <b>new hire</b> who must take over, and a <b>software agent</b> that must stop where the expert would.</p>
+<p><b>What we built:</b> three modules on one sandbox ERP with fake invoices. <b>Capture</b>: the expert shares a screen and works while talking; a voice agent asks <i>why</i> only when the screen is still and the expert is quiet, at least three questions, one about a guardrail. <b>Map</b>: spoken debrief with follow-ups, then a teach-back the expert confirms, producing a <b>Work Map</b> (every step = decision + reason in the expert's verbatim words + guardrails + screen moment). <b>Teach</b>: a voice tutor explains each step, has the new hire predict the next decision, and on an unseen EUR 7,200 invoice stops a wrong save <i>before</i> it happens.</p>
+
+<div class="diagram">
+  <div class="box"><b>Capture</b>screen frame ~1.5 s, masked in browser → vision model → events; Scribe detects voice pause</div><div class="arrow">→</div>
+  <div class="box"><b>Map</b>interviewer agent asks at pauses, debrief + teach-back → <i>Work Map</i> JSON, quotes verified</div><div class="arrow">→</div>
+  <div class="box"><b>Teach</b>tutor agent + screen check; sandbox Save asks tutor first (save hold)</div><div class="arrow">→</div>
+  <div class="box"><b>Hand off</b>export guardrails for an agent; <code>POST /mcp</code> lookup_guardrails</div>
+</div>
+
+<div class="cols">
+<div>
+<h2>2. Tools / ML models used</h2>
+<table>
+<tr><th>Tool</th><th>Role</th></tr>
+<tr><td>ElevenAgents (Expressive)</td><td>Interviewer and tutor voice agents</td></tr>
+<tr><td>ElevenLabs Scribe v2 Realtime</td><td>Live speech-to-text; pause detection</td></tr>
+<tr><td>ElevenLabs TTS / STT</td><td>Fallback voice when agents are off</td></tr>
+<tr><td>Claude Sonnet 5.5</td><td>Vision (screen events), Work Map, teach-back, tutor checks, agent-export test, via one function (<code>lib/model.js</code>)</td></tr>
+<tr><td>Claude Sonnet 4.5</td><td>LLM behind the ElevenAgents agents</td></tr>
+<tr><td>tesseract.js (in browser)</td><td>Opt-in OCR to black out IBAN / email / phone on frames</td></tr>
+<tr><td>Node 20, plain ES modules</td><td>No framework or build step; one handler for local and Vercel</td></tr>
+<tr><td>Vercel, Postgres, S3</td><td>Deploy; saved action trees and videos</td></tr>
+<tr><td>Remotion</td><td>"How it works" clips on the landing page</td></tr>
+</table>
+</div>
+<div>
+<h2>3. What worked well</h2>
+<ul>
+<li><span class="ok">157 / 157 tests pass</span> (<code>node:test</code>) across all three modules.</li>
+<li><b>Unseen case caught:</b> live call to the real model flagged cost center 4711 on the unseen EUR 7,200 invoice and quoted the expert's words.</li>
+<li><b>Agent hand-off:</b> an agent holding only the exported instructions stopped and asked the controller (no asset number). <code>node scripts/verify-export.js</code> prints PASS.</li>
+<li><b>No invented reasons:</b> a quote is kept only if it appears in what the expert said; otherwise it is dropped and counted.</li>
+<li><b>Voice round trip:</b> ElevenLabs TTS then Scribe returned the exact sentence.</li>
+<li><b>Trust:</b> off-the-record button, masked frames, and the expert can delete any step or answer afterwards; exports no longer contain it.</li>
+</ul>
+</div>
+</div>
+
+<div class="cols">
+<div>
+<h2>4. What was challenging</h2>
+<ul>
+<li><b>When to speak.</b> Two signals must agree: Scribe says the expert stopped talking and a 128x72 pixel probe says the screen is still (2.5 s / 1.8 s). Early versions asked too many generic questions; now capped at 2 per segment, 5 per 10 min, ranked guardrail first.</li>
+<li><b>Grounding.</b> LLMs invent plausible reasons. We reject any quote not found verbatim in the expert's speech.</li>
+<li><b>"Before it is saved".</b> Screen checks lag, so the sandbox Save asks the open tutor first and stays unsaved on a violation.</li>
+<li><b>Privacy.</b> Regex for speech, region and OCR masking for frames; if masking fails the frame is withheld.</li>
+<li><b>Environment.</b> An Anthropic key without a workspace id made every call fail with 400; a misspelled env var silently disabled voice.</li>
+</ul>
+</div>
+<div>
+<h2>5. How we spent the build</h2>
+<table>
+<tr><th>Clock (Oct 4, from commits)</th><th>Work</th></tr>
+<tr><td>01:43 – 06:15</td><td>Describe pipeline, Work Map, tutor, ElevenAgents and Scribe libs</td></tr>
+<tr><td>06:15 – 09:00</td><td>Sandbox ERP, debrief, question pacing, compare, guardrail MCP</td></tr>
+<tr><td>09:00 – 12:30</td><td>Fewer questions, segment tree, QR/AR side demo, intent turns, route-map view</td></tr>
+<tr><td>12:30 – 14:00</td><td>README restated as requirements, landing page and clips, Vercel deploy</td></tr>
+</table>
+</div>
+</div>
+
+<h2>Honest limits and next steps</h2>
+<p><span class="no">Not done:</span> no full rehearsal with real voice and a shared screen yet, so pause latency and questions per 10 min are not measured; the sample Work Map is hand-written; the guardrail MCP tool is not registered on the tutor; names and addresses on screen are not detected and the recorded video file is not redacted. <b>If we had 24 more hours,</b> we would record a real expert session on the sandbox as the sample, run the two-person rehearsal and publish the measured numbers, and add Presidio-grade redaction.</p>
+<footer>Moonshot: people first, then agents. The same Work Map teaches a new hire today and constrains an AI agent tomorrow. Data: none beyond fake sandbox invoices (<code>public/sandbox/</code>).</footer>
+</body></html>
