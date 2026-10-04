@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>AR task</title>
+<link rel="stylesheet" href="ar.css">
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<header id="top"><span id="tx">Scan a transaction QR</span><span id="count"></span></header>
+<main id="card" aria-live="polite"></main>
+<div id="keys" aria-hidden="true"></div>
+<div id="ring" hidden><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"/><circle id="arc" cx="50" cy="50" r="44"/></svg><span id="ring-label"></span></div>
+<footer id="actions"></footer>
+<div id="toast" hidden></div>
+<script type="module" src="ar.js"></script>
+</body>
+</html>
