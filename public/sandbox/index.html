@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sandbox ERP: supplier invoices (fake data)</title>
+<style>
+  :root { --ink:#1b2430; --line:#d5dbe3; --bg:#f4f6f9; --accent:#1f5fbf; --warn:#b4231b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.4 system-ui, sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:#16263d; color:#fff; padding:10px 20px; display:flex; justify-content:space-between; }
+  header small { opacity:.7; }
+  header { align-items:center; gap:12px; } header small { margin-left:auto; }
+  main { display:grid; grid-template-columns:320px 1fr; gap:16px; padding:16px 20px; max-width:1100px; margin:auto; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  tr.row { cursor:pointer; } tr.row:hover, tr.row.sel { background:#e8f0fc; }
+  .st { font-size:12px; padding:1px 6px; border-radius:10px; background:#e4e8ee; }
+  .st.posted { background:#d8f0dc; }
+  dl { display:grid; grid-template-columns:150px 1fr; gap:6px 12px; margin:0 0 12px; }
+  dt { color:#566; } dd { margin:0; }
+  select, input, textarea { font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:4px; width:100%; }
+  button { font:inherit; padding:6px 14px; border-radius:4px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); } button:disabled { opacity:.5; cursor:default; }
+  .bar { display:flex; gap:8px; align-items:center; margin-top:12px; }
+  #msg { margin-left:8px; } #msg.bad { color:var(--warn); font-weight:600; }
+  #hold { position:fixed; inset:0; background:rgba(10,20,35,.55); display:flex; align-items:center; justify-content:center; }
+  #hold[hidden] { display:none; } #hold div { background:#fff; padding:20px 24px; border-radius:8px; max-width:420px; }
+</style>
+</head>
+<body>
+<header><strong>Sandbox ERP · Accounts payable</strong><small>Fake data for training. Nothing here is real.</small><button id="reset" class="ghost" type="button" title="Restore all invoices to their starting state">Reset</button></header>
+<main>
+  <section class="panel" aria-label="Invoice inbox">
+    <h2 style="margin:0 0 8px;font-size:16px">Open invoices</h2>
+    <table><thead><tr><th>No.</th><th>Supplier</th><th>Amount</th></tr></thead><tbody id="list"></tbody></table>
+  </section>
+  <section class="panel" id="detail" aria-label="Invoice detail"></section>
+</main>
+<div id="hold" hidden role="alertdialog" aria-live="assertive"><div><b>Checking with your tutor before saving…</b><p id="hold-text">Hold on.</p></div></div>
+<script type="module" src="sandbox.js"></script>
+</body>
+</html>

@@ -1,7 +1,4 @@
 .env
 .git
 node_modules
-lib
 test
-server.js
-package.json

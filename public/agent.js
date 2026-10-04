@@ -10,12 +10,12 @@ export async function agentAvailable(role) {
 
 // tools: { name: async (params) => void }; the agent decides when to call them.
 // Returns a handle: send a cue the agent answers (cue), add silent context (context), gate the mic (mute), end.
-export async function openAgent({ role, prompt, firstMessage, tools = {}, onMessage = () => {}, onMode = () => {}, onError = () => {} }) {
+export async function openAgent({ role, prompt, firstMessage, language, tools = {}, onMessage = () => {}, onMode = () => {}, onError = () => {} }) {
   const res = await fetch(`/api/agent/session?role=${role}`);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
   const { signedUrl } = await res.json();
   const { Conversation } = await import(/* @vite-ignore */ SDK);
-  const overrides = prompt || firstMessage != null ? { agent: { ...(prompt ? { prompt: { prompt } } : {}), ...(firstMessage != null ? { firstMessage } : {}) } } : undefined;
+  const overrides = prompt || firstMessage != null || language ? { agent: { ...(prompt ? { prompt: { prompt } } : {}), ...(firstMessage != null ? { firstMessage } : {}), ...(language ? { language } : {}) } } : undefined;
   const conversation = await Conversation.startSession({
     signedUrl, connectionType: 'websocket', overrides,
     clientTools: Object.fromEntries(Object.entries(tools).map(([name, fn]) => [name, async (p) => { await fn(p ?? {}); return 'ok'; }])),

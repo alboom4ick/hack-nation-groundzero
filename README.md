@@ -2,27 +2,30 @@
 
 Project for **Hack-Nation 7th Global AI Hackathon, Challenge 01: The AI Apprentice** (powered by ElevenLabs).
 Source brief: `../File (1).pdf`. This README restates the brief as project requirements, one to one.
-Open gaps are tracked in [TODO.md](TODO.md) as `G1…G10` (plus `S1…S3`, `MS`). Status snapshot below: `✅` met in code, `⚠️` partly met, `❌` open. A tick means the code does it, not that it was rehearsed live (see G10).
+Open gaps are tracked in [TODO.md](TODO.md) as `G1…G13` (plus `S1…S3`, `MS`); what you must do yourself to close them is in [UNBLOCK.md](UNBLOCK.md).
 
 ## Status snapshot (2026-10-04)
 
+`✅` met in code and checked (tests, or a live call to the real model); `⚠️` code is done but needs a live session with voice and a shared screen; `❌` open. Nothing has been rehearsed end to end yet (G10), so a tick is never a claim about the live demo.
+
 | Area | Requirement ids | Status | Open gaps |
 |---|---|---|---|
-| Capture | C1, C2, C3, C5, C6 | ✅ | |
-| Capture | C4 (screen events in the agent's context) | ⚠️ | G1 |
-| Map | M3, M5 | ✅ | |
-| Map | M1, M2 (spoken debrief and teach-back) | ⚠️ not an ElevenAgents conversation | G3 |
-| Map | M4 (follow-ups not answered during the task) | ⚠️ asked in the prompt, not enforced | G2 |
+| Capture | C1, C2, C3, C5, C6 | ✅ code; pause timing and question quality need the rehearsal | G10 |
+| Capture | C4 (screen events in the agent's context) | ⚠️ `public/asker.js` sends `[SCREEN]` context after each description; needs live tuning | G1 |
+| Map | M3, M5 | ✅ every step in the sample links to a screen moment and the expert's words (a reason, a guardrail or, for a routine step, what was said while doing it) | |
+| Map | M4 (follow-ups not answered during the task) | ✅ enforced in `sanitizeWorkMap` (G2) | |
+| Map | M1, M2 (spoken debrief and teach-back) | ⚠️ run through the interviewer agent (`[ASK:debrief]`, `[TEACHBACK]`), plain TTS/STT as fallback; not run live | G3 |
 | Teach | T1 to T4 | ✅ | |
-| Teach | T5 (catch before save, unseen case) | ⚠️ no sandbox app, check is not instant | G4, G5 |
-| Apprentice Test | A1, A4 | ✅ | |
-| Apprentice Test | A2, A3, A5 | ⚠️ | G1, G2, G6, G7, G8 |
-| ElevenLabs | E2, E3, E5 | ✅ | |
-| ElevenLabs | E1, E4 | ⚠️ | G1, G3 |
-| ElevenLabs | E6 (MCP guardrail lookup) | ❌ | G9 |
-| Stretch | S3 agent-ready export | ⚠️ built, not verified with a real agent | S3 |
-| Stretch | S1, S2 | ❌ | S1, S2 |
-| Pitch | MS moonshot slide, deliverables checklist (§8) | ❌ | MS, G8, G10 |
+| Teach | T5 (catch before save, unseen case) | ✅ `/api/tutor/check` flags code 4711 on the unseen EUR 7,200 invoice and quotes the expert (live call, 2026-10-04); ⚠️ the sandbox Save hold in a real browser is not rehearsed | G4, G10 |
+| Apprentice Test | A1 to A4 | ✅ in code; the **measure** numbers in `PITCH.md` come from the rehearsal | G10 |
+| Apprentice Test | A5 (off the record, PII) | ⚠️ speech by regex; frames by regions and opt-in OCR masking; the expert can delete anything afterwards (G7). Not done: names and addresses, the recorded video file | G6 |
+| ElevenLabs | E2, E3 | ✅ | |
+| ElevenLabs | E1, E4 (ElevenAgents, Expressive Mode, screen events as context) | ⚠️ needs a live session | G1, G3 |
+| ElevenLabs | E5 (Work Map into the tutor) | ⚠️ uploaded as a knowledge-base document (`POST /api/tutor/knowledge`, shapes untested against the real API); Procedures not done | G11 |
+| ElevenLabs | E6 (MCP guardrail lookup) | ⚠️ `POST /mcp` serves `lookup_guardrails`; not yet registered on the tutor (needs a public URL) | G9 |
+| Stretch | S1 two experts, S2 German, S3 agent export | ✅ built; S3 verified with a real agent run on the unseen case (`node scripts/verify-export.js`, 2026-10-04) | |
+| Pitch | MS moonshot, five Apprentice Test answers | ✅ `MOONSHOT.md`, `PITCH.md` | |
+| Pitch | Real recorded sample Work Map; deliverables checklist (§8) | ❌ the sample is hand-written (`sample: true`) | G5, G10 |
 
 ## 1. What we build
 
@@ -49,22 +52,22 @@ A screen-share web app with a voice agent that asks why while the expert works.
 | # | Requirement | Where |
 |---|---|---|
 | C1 | Web app: the expert shares their screen; an ElevenLabs agent listens in a side panel | `public/live.js`, `public/agent.js` |
-| C2 | Every 1 to 2 seconds a frame goes to a vision model, which turns what changed into events ("invoice 4471 opened, cost center changed from 4711 to 0400") | `public/live.js` (`frameMs`), `lib/describe.js`, `POST /api/describe` |
-| C3 | The agent stays quiet while the expert types, reads or talks, and asks at natural pauses: why this step, is there a limit, when would you stop and ask someone | `public/pause.js` (Scribe v2 Realtime), `public/live.js` |
-| C4 | Screen events reach the agent's context so it knows what is on screen | `public/agent.js` |
-| **C5 (required)** | During a real task the agent asks **at least 3 questions**, each at a natural pause and about something **visible on screen**; **at least one is about a guardrail** | `guardrail_question`, `ensureGuardrailQuestion` |
-| C6 | Ask less, later: 3 to 5 live questions per 10 minutes; the rest wait for the debrief | `maxPer10Min` |
+| C2 | Every 1 to 2 seconds a frame goes to a vision model, which turns what changed into events ("invoice 4471 opened, cost center changed from 4711 to 0400") | `public/screen-watch.js` (`frameMs`), `public/live.js`, `lib/describe.js`, `lib/model.js`, `POST /api/describe` |
+| C3 | The agent stays quiet while the expert types, reads or talks, and asks at natural pauses: why this step, is there a limit, when would you stop and ask someone | `public/pause.js`, `public/screen-watch.js` (Scribe v2 Realtime), `public/live.js` (question pacing) |
+| C4 | Screen events reach the agent's context so it knows what is on screen | `agent.context()` in `public/agent.js`; the interviewer gets each described segment as `[SCREEN]` context (`public/live.js`, `screenContext` in `public/asker.js`), the tutor each screen check (`tutorCue.screen`) |
+| **C5 (required)** | During a real task the agent asks **at least 3 questions**, each at a natural pause and about something **visible on screen**; **at least one is about a guardrail** | `public/pacing.js` (`minQuestions`, live guardrail fallback), `guardrail_question` |
+| C6 | Ask less, later: 3 to 5 live questions per 10 minutes; the rest wait for the debrief | `public/pacing.js` (`maxPer10Min`, `gapSec`) |
 
 ### Module 2: Map
 When the task ends, the apprentice runs a short spoken debrief and produces the **Work Map**: a clickable timeline where every step shows the screen moment, the decision, the reason in the expert's words and the guardrails around it.
 
 | # | Requirement | Where |
 |---|---|---|
-| M1 | Spoken debrief that asks what is still unclear | `public/app.js` (`runDebrief`) |
+| M1 | Spoken debrief that asks what is still unclear | `public/app.js` (`runDebrief`), `public/voice-turn.js` |
 | M2 | The apprentice explains the whole process back in its own words so the expert can confirm or correct it (teach-back) | `lib/workmap.js` (`explainWorkMap`, `judgeTeachBack`) |
 | M3 | Work Map is a **clickable timeline**; each step has: screen moment, decision, reason (expert's words), guardrails | `public/workmap.js`, `public/app.js` (`renderMap`) |
-| **M4 (required)** | The debrief asks **at least 3 follow-up questions that were not answered during the task** and **ends with a teach-back the expert confirms** | `MIN_FOLLOWUPS`, `debriefStatus` |
-| **M5 (required)** | **Every step and every guardrail links to a screen moment and to the expert's own words** | `sanitizeWorkMap` keeps only verbatim quotes |
+| **M4 (required)** | The debrief asks **at least 3 follow-up questions that were not answered during the task** and **ends with a teach-back the expert confirms** | `public/debrief.js`, `MIN_FOLLOWUPS`, `debriefStatus` |
+| **M5 (required)** | **Every step and every guardrail links to a screen moment and to the expert's own words** | `sanitizeWorkMap` keeps only verbatim quotes; routine steps carry what the expert said while working (`said`), steps with nothing said are counted (`unlinked`) |
 
 Example step: *Step 4 of 7: code the invoice to a cost center. Screen moment 03:12, invoice 4471, cost center field. Decision: re-coded from opex (4711) to capex (0400). Reason: "Equipment over €5,000 is always capex." (live question at 03:15). Guardrails: no asset number, no capex booking; unknown supplier, stop and ask the controller.*
 
@@ -75,7 +78,7 @@ The Work Map becomes a voice tutor for the next generation. The new hire works a
 |---|---|---|
 | T1 | Tutor watches the new hire's screen and explains each step in the expert's words | `public/tutor.js`, `public/agent-prompts.js` |
 | T2 | Tutor asks the new hire to predict the next decision and where they would stop | `POST /api/tutor/predict` |
-| T3 | Tutor steps in before a guardrail is broken and replays the expert's screen moment | `POST /api/tutor/check`, `interventionFor` |
+| T3 | Tutor steps in before a guardrail is broken and replays the expert's screen moment | `POST /api/tutor/check`, `createLesson` (`violated`) in `public/tutor-logic.js`, `public/save-hold.js` |
 | T4 | End summary: what is mastered, what to practice next | `summarize`, `summarySpeech` |
 | **T5 (required)** | A judge playing a new hire processes **a case the expert never showed**. The tutor **catches at least one wrong decision before it is saved** and explains it **using the reasoning the expert gave** | `public/tutor.js` |
 
@@ -83,11 +86,11 @@ The Work Map becomes a voice tutor for the next generation. The new hire works a
 
 | # | Question | Our answer |
 |---|---|---|
-| A1 | **When to ask.** How does the agent know the expert has paused and stay quiet while they type, read or talk? | Scribe v2 Realtime partial/committed transcripts plus screen-activity probe (`pause.js`, `live.js`) |
-| A2 | **What to ask.** How does it pick the question that reveals a reason or a guardrail instead of one the screen already answers? | Question ranking: guardrail, then decision, then missing slot; slots filled from the screen are never asked (`describe.js`, `pick()` in `live.js`) |
+| A1 | **When to ask.** How does the agent know the expert has paused and stay quiet while they type, read or talk? | Scribe v2 Realtime partial/committed transcripts plus screen-activity probe (`pause.js`, `screen-watch.js`) |
+| A2 | **What to ask.** How does it pick the question that reveals a reason or a guardrail instead of one the screen already answers? | Question ranking: guardrail, then decision, then missing slot; slots filled from the screen are never asked (`describe.js`, `pacing.js`) |
 | A3 | **When it has understood.** How does the debrief decide it is done, and how does the teach-back prove it? | `debriefStatus`: ≥ 3 answered follow-ups and an expert-confirmed teach-back |
-| A4 | **Whether the new hire learned.** How do you show they can handle a new case on their own? | Mastery record per step: predictions plus screen checks (`tutor-logic.js`) |
-| A5 | **Trust.** How can the expert take something off the record, and how is personal data on screen protected? | "Off the record" button; redaction of personal data in speech **and on screen frames** (see G6) |
+| A4 | **Whether the new hire learned.** How do you show they can handle a new case on their own? | Mastery record per step: predictions plus screen checks (`createLesson` in `tutor-logic.js`) |
+| A5 | **Trust.** How can the expert take something off the record, and how is personal data on screen protected? | "Off the record" button pauses capture and questions; regex redaction (IBAN, email, phone) of what the expert says, applied wherever an answer is taken (`voice-turn.js`) or a transcript is kept (`screen-watch.js`). Personal data on screen frames: configurable regions are painted black before any frame is sent, and an opt-in in-browser OCR pass (tesseract.js) blacks out lines containing an IBAN, email, phone or long number, dropping the frame if OCR fails (one masked-frame path for Capture and Teach, `screen-watch.js`). Removing something after the fact: the expert can delete a step, answer or quote from the Work Map (G7). **Not yet:** Presidio-grade detection (names, addresses), and the recorded video file itself is not redacted |
 
 ## 4. What a strong submission looks like
 
@@ -110,9 +113,9 @@ The Work Map becomes a voice tutor for the next generation. The new hire works a
 | E1 | **ElevenAgents** plays both roles, interviewer and tutor, with **Expressive Mode** for a curious, patient voice | `lib/agents.js`, `scripts/setup-agents.js` |
 | E2 | Our choice of LLM behind the agent decides what to ask, when, and when it has understood enough | `DEFAULT_LLM` in `lib/agents.js` |
 | E3 | **Scribe v2 Realtime** listens while people work and knows when they pause | `public/scribe.js`, `GET /api/scribe/token` |
-| E4 | Client tools push screen events into the ElevenAgents conversation | `TOOLS` in `public/agent-prompts.js` |
-| E5 | The Work Map goes into the tutor's knowledge base and Procedures; the tutor watches the new hire's screen the same way | `tutorPrompt()` |
-| E6 | (hint) The tutor can look up guardrails through an ElevenLabs MCP server | not built |
+| E4 | Client tools push screen events into the ElevenAgents conversation | `TOOLS` in `public/agent-prompts.js` registers agent-to-browser tools; screen events go browser-to-agent as contextual updates, for both roles (G1) |
+| E5 | The Work Map goes into the tutor's knowledge base and Procedures; the tutor watches the new hire's screen the same way | `POST /api/tutor/knowledge` (`syncKnowledge` in `lib/agents.js`) uploads it as a knowledge-base document per lesson, with `tutorPrompt()` as the fallback override; no Procedures (G11); screen watching: `public/screen-watch.js`, the same module Capture uses |
+| E6 | (hint) The tutor can look up guardrails through an ElevenLabs MCP server | `lib/guardrail-mcp.js`, `POST /mcp`; not yet registered on the tutor agent (G9) |
 
 Suggested wiring from the brief: (1) the browser shares the screen, a frame every 1 to 2 s goes to a vision model that returns events, not video; (2) client tools push those events into the conversation; (3) after the task an LLM merges events, transcript and answers into Work Map JSON and lists what is still unclear for the debrief; (4) the Work Map goes into the tutor.
 
@@ -120,10 +123,10 @@ Suggested wiring from the brief: (1) the browser shares the screen, a frame ever
 
 | # | Item | Requirement |
 |---|---|---|
-| S1 | Two experts, one task | Show where two sessions differ and ask each expert why |
-| S2 | Any language | The expert explains in German; the tutor teaches a new hire in English |
+| S1 | Two experts, one task | Show where two sessions differ and ask each expert why (`public/compare.js`, Map screen) |
+| S2 | Any language | The expert explains in German; the tutor teaches a new hire in English (`public/language.js`) |
 | S3 | Agent-ready guardrails | Export the Work Map as instructions an agent can load, so it follows the same steps and stops where the expert would (`public/agent-export.js`, button "Export for an agent") |
-| MS | **Moonshot slide** | End the pitch with one slide: the moonshot we would build next and how today's MVP gets there. Directions: living company memory, always-on apprentice, people first then agents, the world's operations manual |
+| MS | **Moonshot slide** | End the pitch with one slide: the moonshot we would build next and how today's MVP gets there. Directions: living company memory, always-on apprentice, people first then agents, the world's operations manual. Ours: people first, then agents (`MOONSHOT.md`) |
 
 ## 7. Data sources and tools (from the brief)
 
@@ -140,10 +143,11 @@ Suggested wiring from the brief: (1) the browser shares the screen, a frame ever
 
 ## 8. Deliverables checklist
 
-- [ ] Working end-to-end MVP: Capture, Map, Teach (all three modules)
-- [ ] A live demo that answers the five Apprentice Test questions
-- [ ] A workflow on fake or sandbox data (own workflow or the invoice running example)
-- [ ] One-slide moonshot at the end of the pitch
+- [~] Working end-to-end MVP: Capture, Map, Teach (all three modules): code done, not yet rehearsed end to end (G10)
+- [~] A live demo that answers the five Apprentice Test questions: answers written in `PITCH.md`; the **measure** numbers wait for the rehearsal
+- [x] A workflow on fake or sandbox data: `public/sandbox/` (four invoices, the invoicing running example)
+- [x] One-slide moonshot at the end of the pitch: `MOONSHOT.md`
+- [ ] Hackathon submission files (`../Final Submission Guide.md`): demo and tech videos, 1-page PDF, public repo, zip, form
 
 ## 9. Run it
 
@@ -151,11 +155,13 @@ Suggested wiring from the brief: (1) the browser shares the screen, a frame ever
 npm install        # no dependencies, Node 20+
 cp .env.example .env   # ELEVENLABS_API, ANTHROPIC_API_KEY
 node scripts/setup-agents.js   # creates the interviewer and tutor agents, writes their ids to .env
-npm start          # http://localhost:3000   (expert: /   tutor: /tutor.html)
+npm start          # http://localhost:3000   (expert: /   tutor: /tutor.html   landing page: /landing/)
 npm test
 ```
 
 `.env` is git-ignored. Never commit keys.
+
+Deploy: `vercel deploy --prod`. `api/index.js` runs the same handler (`lib/app.js`) as `npm start`; the env vars from `.env.example` and both `ELEVENAGENTS_*_ID` must be set on the Vercel project.
 
 ## 10. Out of scope (deliberately removed)
 
