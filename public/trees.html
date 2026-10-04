@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GroundZero · Action trees</title>
 <link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="route-map.css">
 <script type="module" src="a11y.js"></script>
 <style>
   .lib { display:grid; grid-template-columns:minmax(260px,340px) 1fr; gap:24px; align-items:start; }
   @media (max-width:860px) { .lib { grid-template-columns:1fr; } }
+  .lib > * { min-width:0; }
   .lib h2 { font-size:20px; margin:0 0 8px; }
   .pick { display:block; width:100%; text-align:left; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:8px; font:inherit; cursor:pointer; min-height:0; }
   .pick[aria-current="true"] { border:2px solid var(--accent); background:var(--tint); }
@@ -40,6 +42,9 @@
   #summary { color:var(--muted); font-size:16px; }
   #msg { min-height:1.5em; }
   button.danger { color:var(--rec); }
+  .branch.pulse { animation:pulse 1.2s ease-out; }
+  @keyframes pulse { from { box-shadow:0 0 0 4px var(--accent); } to { box-shadow:0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { .branch.pulse { animation:none; border-color:var(--accent); } }
 </style>
 </head>
 <body>
@@ -66,6 +71,9 @@
           <button id="delete" class="ghost danger" hidden>Delete</button>
         </div>
         <p id="summary"></p><p id="msg" class="hint" role="status"></p>
+        <div class="toolbar" style="margin:12px 0 0"><h2 style="font-size:18px;margin:0;flex:1">Route map</h2><button id="fit" class="ghost mini" type="button" aria-pressed="false">Fit to width</button></div>
+        <div id="route" class="rm-wrap" aria-label="Route map of this tree"></div>
+        <p class="legend" aria-hidden="true"><span><i class="ev"></i>Start / done</span><span><i></i>Step</span><span><i class="gw"></i>Decision</span><span><i class="lim"></i>Limit: branch that rejoins</span><span><i class="exc"></i>Exception: branch that rejoins</span><span><i class="stp"></i>Stop and ask: branch that ends</span></p>
         <h2 id="tree-h" class="hint" style="font-size:16px"></h2>
         <ol id="branches" class="branches"></ol>
         <div class="toolbar"><input id="new-step" type="text" placeholder="Add a step of your own, e.g. Notify the buyer" aria-label="New step title"><button id="add-step" class="ghost">Add step</button></div>

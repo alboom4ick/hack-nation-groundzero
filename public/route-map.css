@@ -1,0 +1,65 @@
+/* Route map: git-graph lanes with BPMN shapes */
+.rm-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:16px; background:var(--card); padding:8px 4px 4px; margin:8px 0 6px; }
+.rm { display:block; font-family:inherit; --k-limit:#a24e00; --k-exception:#6a3d9a; --k-stop_and_ask:var(--rec); }
+.rm .rm-main { stroke:var(--accent); stroke-width:3; fill:none; }
+.rm .rm-arrow { fill:var(--accent); }
+.rm .rm-event { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.rm .rm-event.end { stroke-width:5; }
+.rm .rm-chip rect { fill:var(--tint); stroke:var(--accent); }
+.rm .rm-chip text { font-size:12px; font-weight:700; fill:var(--accent); }
+.rm [data-step] { cursor:pointer; outline:none; }
+.rm .rm-task rect:first-of-type { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.rm .rm-task.off rect:first-of-type { stroke-dasharray:6 5; }
+.rm .off { opacity:.45; }
+.rm .rm-title { font-size:15px; font-weight:700; fill:var(--fg); }
+.rm .rm-time { font-size:12px; fill:var(--muted); }
+.rm .rm-num-dot { fill:var(--accent); stroke:var(--card); stroke-width:3; }
+.rm .rm-num { font-size:13px; font-weight:700; fill:var(--accent-ink); }
+.rm .rm-yours { fill:var(--tint); stroke:var(--accent); } .rm .rm-yours-t { font-size:11px; font-weight:700; fill:var(--accent); }
+.rm .rm-diamond { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.rm .rm-x { stroke:var(--accent); stroke-width:2.5; stroke-linecap:round; fill:none; }
+.rm .rm-label-leader { stroke:var(--muted); stroke-width:1.5; stroke-dasharray:2 4; fill:none; }
+.rm .rm-small { font-size:11px; font-weight:700; letter-spacing:.8px; fill:var(--muted); }
+.rm .rm-decision { font-size:13px; font-style:italic; fill:var(--fg); }
+.rm .rm-branch { color:var(--k-limit); } .rm .rm-pill { color:var(--k-limit); }
+.rm .k-exception { color:var(--k-exception); } .rm .k-stop_and_ask { color:var(--k-stop_and_ask); }
+.rm .rm-wire { stroke:currentColor; stroke-width:2.5; fill:none; }
+.rm .rm-branch.off .rm-wire { stroke-dasharray:5 5; }
+.rm .rm-commit { fill:var(--card); stroke:currentColor; stroke-width:2.5; }
+.rm .rm-stop { fill:var(--card); stroke:currentColor; stroke-width:2.5; } .rm .rm-stop-bar { fill:currentColor; }
+.rm .rm-pill rect { fill:var(--card); stroke:currentColor; stroke-width:2; }
+.rm .rm-glyph-dot { fill:currentColor; } .rm .rm-glyph { font-size:13px; font-weight:700; fill:var(--card); }
+.rm .rm-glyph-bar { stroke:var(--card); stroke-width:2.5; stroke-linecap:round; fill:none; }
+.rm .rm-pill .rm-small { fill:currentColor; }
+.rm .rm-rule { font-size:13px; fill:var(--fg); }
+.rm .rm-task:hover rect:first-of-type, .rm .rm-pill:hover rect, .rm .rm-diamond:hover { fill:var(--tint); }
+.rm .selected rect:first-of-type, .rm .selected .rm-diamond { fill:var(--tint); stroke-width:3.5; }
+.rm .rm-task:focus-visible rect:first-of-type, .rm .rm-pill:focus-visible rect, .rm .rm-gate:focus-visible .rm-diamond { stroke:var(--fg); stroke-width:3.5; }
+.rm .rm-branch.selected .rm-wire, .rm .rm-pill.selected rect { stroke-width:4; }
+.rm-wrap.fit { overflow-x:hidden; } .rm-wrap.fit .rm { width:100%; height:auto; }
+.legend { display:flex; gap:6px 18px; flex-wrap:wrap; color:var(--muted); font-size:14px; margin:0 0 16px; }
+.legend i { display:inline-block; vertical-align:-3px; margin-right:6px; width:14px; height:14px; border:2px solid var(--accent); border-radius:4px; }
+.legend i.ev { border-radius:50%; } .legend i.gw { transform:rotate(45deg) scale(.8); border-radius:2px; }
+.legend i.lim { border-color:#a24e00; border-radius:50%; } .legend i.exc { border-color:#6a3d9a; border-radius:50%; } .legend i.stp { border-color:var(--rec); border-radius:50%; }
+
+/* Progress through a lesson (tutor): where the new hire is, what is done, where they slipped. */
+.rm .st-done rect:first-of-type { fill:var(--tint); }
+.rm .st-done .rm-num-dot { fill:var(--ok); }
+.rm .st-wrong rect:first-of-type { stroke:var(--warn); stroke-width:3.5; }
+.rm .st-wrong .rm-num-dot { fill:var(--warn); }
+.rm .st-now rect:first-of-type { fill:var(--tint); stroke-width:4.5; }
+.rm .st-now .rm-here { display:block; }
+.rm .rm-here { display:none; fill:none; stroke:var(--accent); stroke-width:2; stroke-dasharray:3 5; }
+
+/* Mini route: the same idea squeezed into the floating island. */
+.rm-mini { display:block; width:100%; height:auto; max-height:72px; }
+.rm-mini .m-line { stroke:var(--line); stroke-width:3; stroke-linecap:round; }
+.rm-mini .m-step { fill:var(--card); stroke:var(--muted); stroke-width:2; }
+.rm-mini .m-gate { fill:var(--card); stroke:var(--muted); stroke-width:1.5; }
+.rm-mini .m-step.st-done { fill:var(--ok); stroke:var(--ok); }
+.rm-mini .m-step.st-wrong { fill:var(--warn); stroke:var(--warn); }
+.rm-mini .m-step.st-now { fill:var(--accent); stroke:var(--accent); }
+.rm-mini .m-ring { fill:none; stroke:var(--accent); stroke-width:2; opacity:.35; }
+.rm-mini .m-branch { stroke:currentColor; stroke-width:1.5; fill:none; }
+.rm-mini .m-dot { fill:currentColor; }
+.rm-mini .k-limit { color:#a24e00; } .rm-mini .k-exception { color:#6a3d9a; } .rm-mini .k-stop_and_ask { color:var(--rec); }
