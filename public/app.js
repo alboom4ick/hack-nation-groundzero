@@ -1,6 +1,7 @@
 import { segment } from './segmenter.js';
 import * as voice from './voice.js';
 import { depths, toExport, splitNode } from './tree.js';
+import { toBpmn, layoutNodes } from './bpmn.js';
 
 const SAMPLE_FPS = 4;      // motion sampling rate
 const PROBE = { w: 64, h: 36 };
@@ -228,13 +229,13 @@ function showResult(s, out) {
     const dt = document.createElement('dt');
     dt.textContent = k;
     const dd = document.createElement('dd');
-    dd.textContent = v ?? '— needs expert';
-    if (!v) dd.className = 'missing';
+    dd.textContent = v ?? (OPTIONAL.has(k) ? '—' : '— needs expert');
+    if (!v && !OPTIONAL.has(k)) dd.className = 'missing';
     dl.append(dt, dd);
   }
   details.append(summary, desc, dl);
   out.replaceChildren(details);
-  if (!r.questions.length || !r.needsExpert) return;
+  if (!r.questions.length) return;
 
   const head = document.createElement('div');
   head.className = 'hint';
@@ -354,7 +355,9 @@ $('next').addEventListener('click', () => { page++; render(); });
 
 // ---- Steps 7-8: lineage pass, action tree, JSON export ----
 const SVGNS = 'http://www.w3.org/2000/svg';
-const NODE = { w: 200, h: 64, gx: 60, gy: 16 };
+const NODE = { w: 200, h: 64, gx: 70, gy: 16 };
+const SMALL = 44; // events and gateways
+const OPTIONAL = new Set(['location', 'target']);
 
 function nodeInputs() {
   return segments.filter((s) => s.result).map((s) => ({
@@ -389,16 +392,29 @@ $('build-tree').addEventListener('click', async () => {
 
 function renderTree(droppedCount) {
   $('tree').hidden = false;
-  const d = depths(treeNodes);
+  const bpmn = toBpmn(treeNodes, { name: videoName.replace(/\.[^.]+$/, '') });
+  const d = depths(layoutNodes(bpmn));
+  const byId = new Map(treeNodes.map((n) => [n.id, n]));
+  const sizeOf = (n) => (n.bpmn_type === 'userTask' ? { w: NODE.w, h: NODE.h } : { w: SMALL, h: SMALL });
+
+  // Column width = widest node in it; nodes in a column stack top to bottom, centred in the column.
+  const cols = Math.max(...d.values()) + 1;
+  const colW = Array.from({ length: cols }, () => 0);
   const rows = new Map();
-  const pos = new Map();
-  for (const n of treeNodes) {
+  const place = new Map();
+  for (const n of bpmn.nodes) {
     const col = d.get(n.id);
     const row = rows.get(col) ?? 0;
     rows.set(col, row + 1);
-    pos.set(n.id, { x: col * (NODE.w + NODE.gx), y: row * (NODE.h + NODE.gy) });
+    colW[col] = Math.max(colW[col], sizeOf(n).w);
+    place.set(n.id, { col, row, ...sizeOf(n) });
   }
-  const width = (Math.max(...d.values()) + 1) * (NODE.w + NODE.gx) - NODE.gx;
+  const colX = colW.map((_, i) => colW.slice(0, i).reduce((a, w) => a + w + NODE.gx, 0));
+  for (const p of place.values()) {
+    p.x = colX[p.col] + (colW[p.col] - p.w) / 2;
+    p.y = p.row * (NODE.h + NODE.gy) + (NODE.h - p.h) / 2;
+  }
+  const width = colX.at(-1) + colW.at(-1);
   const height = Math.max(...rows.values()) * (NODE.h + NODE.gy) - NODE.gy;
   const svg = document.createElementNS(SVGNS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -411,24 +427,47 @@ function renderTree(droppedCount) {
     if (text != null) e.textContent = text;
     return e;
   };
-  for (const n of treeNodes) {
-    for (const parent of n.parents) {
-      const a = pos.get(parent);
-      const b = pos.get(n.id);
-      const x1 = a.x + NODE.w, y1 = a.y + NODE.h / 2, x2 = b.x, y2 = b.y + NODE.h / 2, mx = (x1 + x2) / 2;
-      svg.append(el('path', { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': n.uncertain ? '5 4' : '0' }));
-    }
-  }
   const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
-  for (const n of treeNodes) {
-    const { x, y } = pos.get(n.id);
-    const g = el('g', { transform: `translate(${x},${y})`, style: 'cursor:pointer' });
-    g.append(el('title', {}, `${n.description}\n\nContribution: ${n.contribution}\n${n.rationale}`));
-    g.append(el('rect', { width: NODE.w, height: NODE.h, rx: 8, fill: 'var(--card)', stroke: n.id === selectedId ? 'var(--accent)' : n.uncertain ? '#d97706' : 'var(--line)', 'stroke-width': n.id === selectedId ? 3 : 1.5 }));
-    g.append(el('text', { x: 10, y: 20, fill: 'var(--accent)', 'font-size': 12, 'font-weight': 600 }, `${n.id} · ${n.video_segment.t_start}–${n.video_segment.t_end}s`));
-    g.append(el('text', { x: 10, y: 38, fill: 'var(--fg)', 'font-size': 12 }, clip(n.contribution || n.description, 30)));
-    g.append(el('text', { x: 10, y: 54, fill: 'var(--muted)', 'font-size': 11 }, clip(n.contribution ? n.description : '', 34)));
-    g.addEventListener('click', () => selectNode(n.id));
+
+  const marker = el('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+  marker.append(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--muted)' }));
+  const defs = el('defs', {});
+  defs.append(marker);
+  svg.append(defs);
+  for (const f of bpmn.flows) {
+    const a = place.get(f.source);
+    const b = place.get(f.target);
+    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2;
+    const uncertain = byId.get(f.target)?.uncertain;
+    svg.append(el('path', { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': uncertain ? '5 4' : '0', 'marker-end': 'url(#arrow)' }));
+    const label = f.condition?.expression ?? (f.default ? 'otherwise' : '');
+    if (label) svg.append(el('text', { x: mx, y: (y1 + y2) / 2 - 4, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 10 }, clip(label, 24)));
+  }
+  for (const n of bpmn.nodes) {
+    const { x, y, w, h } = place.get(n.id);
+    const g = el('g', { transform: `translate(${x},${y})` });
+    if (n.bpmn_type === 'userTask') {
+      const t = byId.get(n.id);
+      g.style.cursor = 'pointer';
+      g.append(el('title', {}, `${t.description}\n\nContribution: ${t.contribution}\n${t.rationale}${t.ar ? `\n\nAR: ${t.ar.instruction} → ${t.ar.anchor.label}` : ''}`));
+      g.append(el('rect', { width: w, height: h, rx: 8, fill: 'var(--card)', stroke: n.id === selectedId ? 'var(--accent)' : t.uncertain ? '#d97706' : 'var(--line)', 'stroke-width': n.id === selectedId ? 3 : 1.5 }));
+      g.append(el('text', { x: 10, y: 20, fill: 'var(--accent)', 'font-size': 12, 'font-weight': 600 }, `${n.id} · ${t.video_segment.t_start}–${t.video_segment.t_end}s`));
+      g.append(el('text', { x: 10, y: 38, fill: 'var(--fg)', 'font-size': 12 }, clip(n.name, 30)));
+      g.append(el('text', { x: 10, y: 54, fill: 'var(--muted)', 'font-size': 11 }, clip(t.ar?.instruction ?? t.description, 34)));
+      g.addEventListener('click', () => selectNode(n.id));
+    } else if (n.bpmn_type.endsWith('Event')) {
+      g.append(el('title', {}, n.name));
+      g.append(el('circle', { cx: w / 2, cy: h / 2, r: w / 2 - 2, fill: 'var(--card)', stroke: n.id === 'start' ? '#16a34a' : '#dc2626', 'stroke-width': n.id === 'start' ? 2 : 4 }));
+    } else {
+      g.append(el('title', {}, `${n.name}\n${n.gateway.type}${n.gateway.decision_variable ? ` on ${n.gateway.decision_variable}` : ''}`));
+      g.append(el('path', { d: `M${w / 2},2 L${w - 2},${h / 2} L${w / 2},${h - 2} L2,${h / 2} z`, fill: 'var(--card)', stroke: '#d97706', 'stroke-width': 2 }));
+      const c = w / 2, r = 9;
+      g.append(el('path', {
+        d: n.bpmn_type === 'parallelGateway' ? `M${c - r},${c} H${c + r} M${c},${c - r} V${c + r}` : `M${c - 7},${c - 7} L${c + 7},${c + 7} M${c + 7},${c - 7} L${c - 7},${c + 7}`,
+        stroke: '#d97706', 'stroke-width': 2.5, fill: 'none',
+      }));
+      if (n.gateway.type === 'XOR') g.append(el('text', { x: c, y: -4, 'text-anchor': 'middle', fill: 'var(--fg)', 'font-size': 11 }, clip(n.name, 28)));
+    }
     svg.append(g);
   }
   $('tree-svg').replaceChildren(svg);

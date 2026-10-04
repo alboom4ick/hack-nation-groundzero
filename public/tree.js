@@ -1,5 +1,23 @@
 // Action-tree helpers shared by the browser and the server: lineage sanitising,
-// DAG validation, layout depth, and the exported JSON shape. No DOM.
+// DAG validation, layout depth, and the exported BPMN JSON. No DOM.
+import { toBpmn, CONDITION_RE } from './bpmn.js';
+
+const str = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : '');
+const words = (t, n) => t.split(/\s+/).slice(0, n).join(' ');
+
+function cleanAnchor(a) {
+  const label = str(a?.label, 60);
+  return label ? { type: a.type === 'region' ? 'region' : 'object', label } : null;
+}
+
+// AR guidance block: where to point the overlay, what to tell the user, how to know it worked.
+function cleanAr(ar, name, node) {
+  const anchor = cleanAnchor(ar?.anchor) ?? (node.slots?.object ? { type: 'object', label: str(node.slots.object, 60) } : null);
+  if (!anchor) return null;
+  const target = cleanAnchor(ar?.target_anchor);
+  const success = str(ar?.success_condition, 120);
+  return { anchor, ...(target ? { target_anchor: target } : {}), instruction: str(ar?.instruction, 80) || name, ...(success ? { success_condition: success } : {}) };
+}
 
 // LLM output is untrusted: keep only parents that exist and come earlier in time.
 // Forward/self/unknown references are dropped, which also makes cycles impossible.
@@ -10,17 +28,29 @@ export function sanitizeLineage(proposed, nodes) {
   const out = nodes.map((n) => {
     const p = byId.get(n.id) ?? {};
     const parents = [];
+    const conditions = {};
     for (const parent of Array.isArray(p.parents) ? p.parents : []) {
       if (!order.has(parent) || order.get(parent) >= order.get(n.id)) dropped.push({ id: n.id, parent });
-      else if (!parents.includes(parent)) parents.push(parent);
+      else if (!parents.includes(parent)) {
+        parents.push(parent);
+        const cond = str(p.conditions?.[parent], 80);
+        if (CONDITION_RE.test(cond)) conditions[parent] = cond;
+      }
     }
+    const contribution = str(p.contribution, 200);
+    const name = str(p.name, 60) || words(contribution || n.description || n.id, 6);
+    const question = str(p.decision?.question, 80);
     return {
       id: n.id,
-      contribution: typeof p.contribution === 'string' ? p.contribution.trim() : '',
+      name,
+      contribution,
       parents,
-      rationale: typeof p.rationale === 'string' ? p.rationale.trim() : '',
+      conditions,
+      rationale: str(p.rationale, 200),
       uncertain: p.uncertain === true,
-      question: typeof p.question === 'string' && p.question.trim() ? p.question.trim() : null,
+      question: str(p.question, 200) || null,
+      decision: question ? { question } : null,
+      ar: cleanAr(p.ar, name, n),
     };
   });
   return { lineage: out, dropped };
@@ -58,11 +88,13 @@ export function depths(nodes) {
 // The first part keeps the node's parents, answers and slots; every child that depended on the node now
 // depends on the last part (the one whose result it needed). The node's time range is divided evenly.
 // Returns a new array in the same chronological position; throws on invalid input.
+const renameKey = (obj = {}, from, to) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k === from ? to : k, v]));
+
 export function splitNode(nodes, id, parts) {
   const i = nodes.findIndex((n) => n.id === id);
   if (i < 0) throw new Error(`unknown node ${id}`);
   if (!Array.isArray(parts) || parts.length < 2) throw new Error('a split needs at least 2 parts');
-  const clean = parts.map((p) => ({ description: String(p?.description ?? '').trim(), contribution: String(p?.contribution ?? '').trim() }));
+  const clean = parts.map((p) => ({ description: String(p?.description ?? '').trim(), contribution: String(p?.contribution ?? '').trim(), name: str(p?.name, 60), ar: p?.ar }));
   if (clean.some((p) => !p.description)) throw new Error('every part needs a description');
   const ids = clean.map((_, k) => `${id}.${k + 1}`);
   if (ids.some((x) => nodes.some((n) => n.id === x))) throw new Error(`${id} was already split`);
@@ -76,6 +108,10 @@ export function splitNode(nodes, id, parts) {
     id: ids[k],
     description: p.description,
     contribution: p.contribution || base.contribution,
+    name: p.name || words(p.description, 6),
+    conditions: k === 0 ? { ...base.conditions } : {},
+    decision: k === clean.length - 1 ? base.decision ?? null : null,
+    ar: cleanAr(p.ar, p.name || words(p.description, 6), { slots: k === 0 ? base.slots : {} }),
     parents: k === 0 ? [...base.parents] : [ids[k - 1]],
     rationale: k === 0 ? base.rationale : `follows ${ids[k - 1]}; split from ${id}`,
     uncertain: k === 0 ? base.uncertain : false,
@@ -88,7 +124,7 @@ export function splitNode(nodes, id, parts) {
 
   const last = ids.at(-1);
   const rest = nodes.filter((_, j) => j !== i).map((n) => (
-    n.parents.includes(id) ? { ...n, parents: [...new Set(n.parents.map((p) => (p === id ? last : p)))] } : n
+    n.parents.includes(id) ? { ...n, parents: [...new Set(n.parents.map((p) => (p === id ? last : p)))], conditions: renameKey(n.conditions, id, last) } : n
   ));
   const out = [...rest.slice(0, i), ...made, ...rest.slice(i)];
   if (!isDag(out)) throw new Error('split would create a cycle');
@@ -96,19 +132,10 @@ export function splitNode(nodes, id, parts) {
 }
 
 export function toExport({ video, nodes }) {
+  const name = (video?.name ?? 'process').replace(/\.[^.]+$/, '');
   return {
-    schema: 'groundzero.action-tree/1',
+    ...toBpmn(nodes, { name }),
     generated_at: new Date().toISOString(),
     video,
-    nodes: nodes.map((n) => ({
-      id: n.id,
-      description: n.description,
-      contribution: n.contribution,
-      lineage: { parents: n.parents, rationale: n.rationale, uncertain: n.uncertain },
-      slots: n.slots,
-      expert_answers: n.answers,
-      video_segment: n.video_segment,
-      split_from: n.split_from ?? null,
-    })),
   };
 }

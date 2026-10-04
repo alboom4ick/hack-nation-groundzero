@@ -73,3 +73,10 @@ test('transcribe posts multipart audio and returns trimmed text', async () => {
   assert.equal(await transcribe(Buffer.alloc(10), 'audio/webm', 'k', { fetchImpl: fake }), 'to loosen it');
   assert.equal(form.get('model_id'), 'scribe_v2');
 });
+
+test('branch_question becomes a tagged question and does not suppress slot fallbacks', () => {
+  const r = finalize(parseDescription(reply({ description: 'd', slots: { object: 'a', tool: 'b', intent: 'c', precondition: 'd', effect: null }, questions: [], branch_question: { frame: 1, text: "What if it isn't empty?" } }), 3));
+  assert.deepEqual(r.questions.map((q) => q.kind ?? 'slot'), ['slot', 'branch']);
+  assert.equal(r.questions[1].frame, 1);
+  assert.equal(finalize(parseDescription(reply({ description: 'd', slots: {}, questions: [], branch_question: null }))).questions.every((q) => q.kind !== 'branch'), true);
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeLineage, isDag, depths, toExport, splitNode } from '../public/tree.js';
+import { sanitizeLineage, isDag, depths, splitNode } from '../public/tree.js';
 import { parseSplit, proposeSplit } from '../lib/split.js';
 import { proposeLineage } from '../lib/lineage.js';
 
@@ -45,12 +45,6 @@ test('proposeLineage sanitises model output end to end', async () => {
   const { lineage, dropped } = await proposeLineage(nodes, 'k', fake);
   assert.deepEqual(lineage[1].parents, ['n1']);
   assert.deepEqual(dropped, [{ id: 'n2', parent: 'n4' }]);
-});
-
-test('toExport keeps the documented node shape', () => {
-  const out = toExport({ video: { name: 'v.mp4', duration: 12 }, nodes: [{ ...nodes[0], contribution: 'c', parents: [], rationale: '', uncertain: false }] });
-  assert.deepEqual(Object.keys(out.nodes[0]), ['id', 'description', 'contribution', 'lineage', 'slots', 'expert_answers', 'video_segment', 'split_from']);
-  assert.equal(out.schema, 'groundzero.action-tree/1');
 });
 
 const tree = () => [
