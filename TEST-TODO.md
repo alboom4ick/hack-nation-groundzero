@@ -6,6 +6,11 @@ Spoken lines are in English; keep the language selector on English unless a step
 
 ## A. Setup
 
+Owner (Ostap), before sending to the cofounder:
+- [ ] Vercel env vars set: `ELEVENLABS_API`, `ANTHROPIC_API_KEY`, `ELEVENAGENTS_INTERVIEWER_ID`, `ELEVENAGENTS_TUTOR_ID` (plus `ANTHROPIC_WORKSPACE_ID` if the key is not workspace-scoped)
+- [ ] Redeployed after changing env vars
+- [ ] Deployment opens for the cofounder (no deploy protection in the way)
+
 Cofounder:
 - [ ] Chrome, microphone and screen-share allowed; nothing to install, no `.env`
 - [ ] Three tabs open with DevTools Console: `/`, `/sandbox/`, `/tutor.html`
