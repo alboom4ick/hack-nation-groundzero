@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GroundZero Tutor</title>
 <link rel="stylesheet" href="theme.css">
+<script type="module" src="a11y.js"></script>
 <style>
   ol.steps { list-style:none; margin:0; padding:0; }
   #voice { display:flex; gap:14px; align-items:center; position:sticky; top:8px; z-index:5; box-shadow:0 8px 30px rgba(0,0,0,.12); }
@@ -19,16 +20,17 @@
 </style>
 </head>
 <body>
-<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><span class="hint">Tutor</span><span class="pill">Private workspace</span></div></header>
-<main>
-  <p class="eyebrow">Teach a new hire</p>
-  <h1>GroundZero Tutor</h1>
-  <p class="sub">Work a case on your own screen. The tutor explains each step the way the expert did, asks you to predict the next decision, and stops you before a guardrail is broken.</p>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><div id="a11y"></div><span class="pill">Practice case on your own screen</span></div></header>
+<main id="main">
+  <div class="hero"><p class="eyebrow">Module 3 · Teach</p>
+  <h1>Learn it the way the expert did.</h1>
+  <p class="sub">Work through a real case on your own screen. The tutor explains each step in the expert's own words, asks what you would do next, and gently stops you before a mistake.</p></div>
 
   <div id="load" class="card">
     <div class="row">
-      <button id="load-sample" class="ghost">Use the sample invoice Work Map</button>
-      <label class="hint">…or load a Work Map JSON <input id="load-file" type="file" accept="application/json,.json"></label>
+      <button id="load-sample" class="big">Try the sample invoice guide</button>
+      <label class="hint">…or open a guide file <input id="load-file" type="file" accept="application/json,.json"></label>
     </div>
     <div id="load-msg" class="hint" style="margin-top:6px"></div>
   </div>
@@ -41,8 +43,8 @@
       <div id="voice-a"></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:6px">
-      <button id="check-now" class="ghost" title="Check what is on screen against the expert's rules before you save">Check before I save</button>
-      <button id="voice-end" class="ghost">Finish</button>
+      <button id="check-now" class="ghost" title="Check what is on screen against the expert's rules before you save">Check my work</button>
+      <button id="voice-end" class="ghost">I am finished</button>
     </div>
   </div>
 
@@ -54,7 +56,7 @@
   </div>
 
   <div id="plan" class="card" hidden>
-    <div class="row" style="justify-content:space-between"><h3 id="plan-title" style="margin:0"></h3><button id="start">● Share my screen &amp; start</button></div>
+    <div class="row" style="justify-content:space-between"><h3 id="plan-title" style="margin:0"></h3><button id="start">● Start practising</button></div>
     <ol id="steps" class="steps" style="margin-top:12px"></ol>
   </div>
 

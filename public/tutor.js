@@ -2,6 +2,11 @@
 // each Work Map step in the expert's words, asks them to predict the next decision, and checks the screen at
 // natural pauses (or on demand) so a wrong decision is caught before it is saved.
 import * as voice from './voice.js';
+import { openAgent, agentAvailable } from './agent.js';
+import { openScribe } from './scribe.js';
+import { createVoiceGate } from './pause.js';
+import { redact } from './redact.js';
+import { tutorPrompt } from './agent-prompts.js';
 import { explainStep, predictionPrompt, interventionFor, isJudgment, emptyRecord, summarize, summarySpeech, mmss } from './tutor-logic.js';
 
 const T = { probeMs: 500, frameMs: 1500, pixelDelta: 60, activePixels: 4, idleSec: 2.5, quietSec: 1.8, voiceLevel: 0.02, checkGapSec: 20 };
@@ -111,6 +116,58 @@ async function start() {
   const s = session = { t0: performance.now(), busy: true, ended: false, prev: null, lastActivity: 0, lastVoice: 0, lastFrame: -Infinity, lastCheck: -Infinity, changed: false, frames: [], said: '', checking: false };
   const now = () => (performance.now() - s.t0) / 1000;
 
+  // ElevenAgents plays the tutor when it has been set up; otherwise the scripted TTS loop below runs.
+  let agent = null, pendingMute = false, finishing = false, summarySpoken = false, summaryCued = false;
+  const agentMode = await agentAvailable('tutor');
+  const stepIndex = (id) => workMap.steps.findIndex((x) => x.id === id);
+  const releaseAgent = () => { pendingMute = false; agent?.mute(true); s.busy = false; voice.setState('watching'); };
+  let watchdog = null;
+  const handBackSoon = () => { clearTimeout(watchdog); watchdog = setTimeout(() => { if (s.busy && !finishing) releaseAgent(); }, 90000); };
+  if (agentMode) {
+    try {
+      agent = await openAgent({
+        role: 'tutor', prompt: tutorPrompt(workMap, EXPERT),
+        tools: {
+          set_step: ({ step_id }) => { const i = stepIndex(step_id); if (i >= 0) { current = i; renderSteps(); } },
+          record_prediction: ({ step_id, correct }) => {
+            const r = record[step_id];
+            if (!r) return;
+            r.predicted = correct === true || correct === 'true' ? 'right' : 'wrong';
+            const st = workMap.steps[stepIndex(step_id)];
+            if (r.predicted === 'wrong') { $('alert').hidden = false; $('alert-text').textContent = `Expert: ${st.decision ?? st.title}${st.reason ? ` — "${st.reason.words}"` : ''}`; showReplay(st.screen_moment.t, st.screen_moment.uri); }
+            renderSteps();
+          },
+          hand_back: () => { pendingMute = true; handBackSoon(); },
+          finish_lesson: () => { pendingMute = true; finishing = true; },
+        },
+        onMessage: ({ source, message }) => {
+          if (source === 'user') { s.said = message; $('voice-a').textContent = message; } else $('voice-q').textContent = message;
+        },
+        onMode: (mode) => {
+          if (mode === 'speaking') { voice.setState('speaking'); if (summaryCued) summarySpoken = true; return; }
+          if (summaryCued && summarySpoken) { agent.end(); return; }
+          if (pendingMute) { releaseAgent(); if (finishing) end(); } else voice.setState('listening');
+        },
+        onError: (m) => { $('voice-a').textContent = 'agent: ' + m; },
+      });
+    } catch (err) {
+      $('load-msg').textContent = `ElevenAgents unavailable (${err.message}); using the scripted tutor.`;
+      agent = null;
+    }
+  }
+
+  // Scribe v2 Realtime: knows when the new hire is talking or has paused, and writes down what they think aloud
+  // (the agent's own mic is muted while they work, so this is the only record of it).
+  const gate = createVoiceGate({ quietSec: T.quietSec });
+  let scribe = null;
+  try {
+    scribe = await openScribe({
+      onSpeech: () => gate.partial(now()),
+      onCommit: (text) => { gate.committed(); if (!s.busy && !s.ended) s.said = `${s.said} ${redact(text)}`.trim().slice(-600); },
+    });
+    gate.setScribe(true);
+  } catch (err) { $('load-msg').textContent = `Scribe unavailable (${err.message}); pauses come from the microphone level.`; }
+
   $('voice').hidden = false;
   $('start').disabled = true;
   $('summary').hidden = true;
@@ -143,6 +200,14 @@ async function start() {
     $('alert').hidden = false;
     $('alert-text').textContent = `${result.observed} — ${iv.explain}`;
     showReplay(iv.t, step.screen_moment?.uri);
+    if (agent) {
+      agent.mute(false);
+      agent.context(`[SCREEN] ${result.observed}`);
+      agent.cue(`[INTERVENE] Step ${step.id} "${step.title}". The new hire is about to break a rule. Expert's words: "${iv.words ?? step.decision}". Ask them why, listen, then quote those words and help them fix it.`);
+      s.lastCheck = now();
+      handBackSoon();
+      return;
+    }
     await say(iv.ask);
     const reply = await hear();
     if (reply) s.said = reply;
@@ -163,7 +228,14 @@ async function start() {
       s.lastCheck = now();
       s.changed = false;
       if (result.verdict === 'violation') await intervene(result);
-      else if (forced) {
+      else if (agent) {
+        agent.context(`[SCREEN] ${result.observed || 'nothing decided yet'} (${result.verdict})`);
+        if (forced) {
+          s.busy = true; agent.mute(false);
+          agent.cue(`[SAY] ${result.verdict === 'ok' ? 'That matches how the expert did it. Go ahead.' : 'I cannot see a decision on screen yet. Show me the field you are about to save.'}`);
+          handBackSoon();
+        }
+      } else if (forced) {
         await say(result.verdict === 'ok' ? 'That matches how the expert did it. Go ahead.' : 'I can’t see a decision on screen yet. Show me the field you are about to save.');
         voice.setState('watching');
       }
@@ -187,8 +259,8 @@ async function start() {
     analyser.getByteTimeDomainData(micBuf);
     let sum = 0;
     for (const b of micBuf) sum += ((b - 128) / 128) ** 2;
-    if (Math.sqrt(sum / micBuf.length) > T.voiceLevel) s.lastVoice = t;
-    const screenActive = t - s.lastActivity < T.idleSec, voiceActive = t - s.lastVoice < T.quietSec;
+    if (Math.sqrt(sum / micBuf.length) > T.voiceLevel) { s.lastVoice = t; gate.level(t); }
+    const screenActive = t - s.lastActivity < T.idleSec, voiceActive = gate.active(t);
     watchLabel(screenActive, voiceActive, s.changed ? 'will check when you pause' : '');
     if (s.changed && !screenActive && !voiceActive && t - s.lastCheck >= T.checkGapSec) check(false);
   };
@@ -197,17 +269,29 @@ async function start() {
   // ---- the lesson ----
   let nextResolve = null;
   $('voice-end').textContent = 'Next step';
-  $('voice-end').onclick = () => nextResolve?.();
+  $('voice-end').onclick = () => {
+    if (!agent) { nextResolve?.(); return; }
+    const st = workMap.steps[current];
+    if (st && !record[st.id].violations) record[st.id].touched = true;
+    $('alert').hidden = true;
+    s.said = '';
+    s.busy = true;
+    agent.mute(false);
+    agent.cue('[NEXT] I have done this step on my screen. Continue with the next step.');
+    handBackSoon();
+  };
   const waitNext = () => new Promise((r) => { nextResolve = r; });
 
   const end = async () => {
     if (s.ended) return;
     s.ended = true;
     clearInterval(timer);
+    scribe?.close();
     voice.interrupt();
     display.getTracks().forEach((t) => t.stop());
     mic.getTracks().forEach((t) => t.stop());
     ctx.close();
+    clearTimeout(watchdog);
     const sum = summarize(workMap, record);
     $('mastered').replaceChildren(...(sum.mastered.length ? sum.mastered.map((m) => el('li', '', m.title)) : [el('li', 'hint', 'Nothing proven yet.')]));
     $('practice').replaceChildren(...(sum.practice.length ? sum.practice.map((p) => el('li', '', `${p.title} (${p.why})`)) : [el('li', 'hint', 'Nothing left to practice.')]));
@@ -219,10 +303,22 @@ async function start() {
     voice.setState('idle');
     session = null;
     s.busy = true;
+    if (agent) {
+      summaryCued = true;
+      agent.mute(false);
+      agent.cue(`[SUMMARY] Mastered: ${sum.mastered.map((m) => m.title).join(', ') || 'nothing yet'}. Practise next: ${sum.practice.map((p) => `${p.title} (${p.why})`).join(', ') || 'nothing'}. Tell me this in two spoken sentences.`);
+      setTimeout(() => agent?.end(), 40000);
+      return;
+    }
     await say(summarySpeech(sum));
   };
   display.getVideoTracks()[0].addEventListener('ended', end);
 
+  if (agent) {
+    voice.setState('listening');
+    $('voice-a').textContent = 'Say hello to your tutor, or press Next step when you are ready for the next one.';
+    return;
+  }
   (async () => {
     await say(`Let's work through ${workMap.process?.name ?? 'this process'}. I will explain each step the way ${EXPERT} did. Do the step on your own screen, then press Next.`);
     for (let i = 0; i < workMap.steps.length && !s.ended; i++) {
