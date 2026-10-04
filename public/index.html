@@ -6,6 +6,8 @@
 <title>GroundZero</title>
 <link rel="stylesheet" href="theme.css">
 <script type="module" src="a11y.js"></script>
+<script type="module" src="home-link.js"></script>
+<script type="module" src="how.js"></script>
 <style>
   input[type=file] { width:100%; }
   progress { flex:1; min-width:120px; }
@@ -87,16 +89,27 @@
   .mstep .quote { font-style:italic; }
   .mstep .gap { color:#d97706; }
   #orb { --level:0; flex:none; width:56px; height:56px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #8fd1c7, var(--accent)); transform:scale(calc(1 + var(--level) * .6)); transition:transform .08s linear, background .3s; }
+  button.pill { background:var(--surface); color:var(--fg); border:1px solid var(--fg); min-height:0; padding:8px 16px; font-size:16px; border-radius:999px; }
+  button.pill:hover:not(:disabled) { background:var(--tint); filter:none; }
+  /* How it works: the big button under the intro (opens the pop-up from how.js) */
+  .how-open { display:inline-flex; align-items:center; gap:16px; min-height:68px; padding:12px 34px 12px 14px; border-radius:999px; border:2px solid var(--fg); background:var(--fg); color:var(--bg); font:700 21px/1 'Atkinson Hyperlegible', system-ui, sans-serif; margin:0 0 32px; }
+  .how-open:hover:not(:disabled) { filter:none; box-shadow:0 12px 28px rgba(36,39,34,.28); transform:translateY(-2px); }
+  .how-open .play { position:relative; flex:none; width:42px; height:42px; border-radius:50%; background:#f0a93b; display:grid; place-items:center; }
+  .how-open .play svg { width:16px; height:16px; margin-left:3px; fill:#201300; }
+  .how-open .play::after { content:''; position:absolute; inset:-2px; border-radius:50%; border:2px solid #f0a93b; animation:how-ring 2.4s ease-out infinite; }
+  @keyframes how-ring { from { transform:scale(1); opacity:.85; } to { transform:scale(1.75); opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .how-open .play::after { animation:none; opacity:0; } .how-open:hover:not(:disabled) { transform:none; } }
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
-<header class="app-header"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</div><div class="row"><a class="pill" href="trees.html">Action trees</a><div id="a11y"></div></div></header>
+<header class="app-header"><a class="brand" href="/" aria-label="GroundZero, home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l3.9 8.1 8.9 1.2-6.5 6.2 1.6 8.8L16 23l-7.9 4.3 1.6-8.8-6.5-6.2 8.9-1.2z"/></svg>GroundZero</a><div class="row"><button type="button" class="pill" data-how aria-haspopup="dialog">How it works</button><a class="pill" href="trees.html">Action trees</a><div id="a11y"></div></div></header>
 <main id="main">
   <div class="hero">
     <p class="eyebrow">Module 1 · Capture</p>
     <h1>Pass on what you know.</h1>
     <p class="sub">Do your job the way you always do, and talk through it out loud. We watch, ask a few friendly questions, and turn it into a guide for the next person.</p>
+    <button type="button" class="how-open" data-how aria-haspopup="dialog"><span class="play" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 1.5v13l11-6.5z"/></svg></span>How it works</button>
   </div>
 
   <ol class="stepper" aria-label="Your progress">
